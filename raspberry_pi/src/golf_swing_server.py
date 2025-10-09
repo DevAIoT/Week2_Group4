@@ -94,7 +94,7 @@ class GolfSwingServer:
             logger.error(f"Failed to start server: {e}")
             raise
     
-    async def handle_websocket(self, websocket, path):
+    async def handle_websocket(self, websocket):
         """Handle new WebSocket connections"""
         self.websocket_clients.add(websocket)
         logger.info(f"Client connected. Total clients: {len(self.websocket_clients)}")
