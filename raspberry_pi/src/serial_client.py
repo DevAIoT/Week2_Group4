@@ -127,7 +127,7 @@ class SerialClient:
             logger.error("❌ ESP32 data format not recognized!")
             logger.error("Sample lines received:")
             for i, line in enumerate(sample_lines):
-                logger.error(f"  Line {i+1}: '{line}'")
+                logger.error(f"  Line {i+1}: '{line}' (length: {len(line)}, bytes: {line.encode('utf-8')})")
             
             logger.error("Expected formats:")
             logger.error("  1. 'Accel X: 123 | Y: 456 | Z: 789 | Gyro X: 123 | Y: 456 | Z: 789'")
