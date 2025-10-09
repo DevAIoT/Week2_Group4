@@ -35,7 +35,7 @@ class GolfSwingServer:
         # Recording state
         self.is_recording = False
         self.recording_start_time = None
-        self.recording_duration = 5.0  # 5 seconds
+        self.recording_duration = 2.0  # 2 seconds
         self.recorded_data = []
         
         # Setup logging
@@ -152,7 +152,7 @@ class GolfSwingServer:
             })
             return
         
-        logger.info("Starting swing recording for 5 seconds...")
+        logger.info("Starting swing recording for 2 seconds...")
         self.is_recording = True
         self.recording_start_time = time.time()
         self.recorded_data = []

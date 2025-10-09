@@ -21,7 +21,7 @@ class MLPredictor:
         # Data collection for swing analysis
         self.swing_data_buffer = []
         self.max_buffer_size = 200  # Store last 200 IMU readings (~4 seconds at 50Hz)
-        self.min_swing_samples = 50  # Minimum samples needed for prediction
+        self.min_swing_samples = 20  # Minimum samples needed for prediction (reduced for 2s recording)
         
         self.load_models()
     
