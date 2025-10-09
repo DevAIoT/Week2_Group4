@@ -5,7 +5,6 @@ Integrates the trained ML model to predict swing types from IMU data
 
 import joblib
 import numpy as np
-import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from loguru import logger
@@ -79,18 +78,19 @@ class MLPredictor:
         if len(data) < self.min_swing_samples:
             return None
         
-        # Convert to DataFrame for easier manipulation
-        df = pd.DataFrame(data, columns=['ax', 'ay', 'az', 'gx', 'gy', 'gz'])
+        # Convert to numpy array for easier manipulation
+        data_array = np.array(data)  # Shape: (n_samples, 6) - [ax, ay, az, gx, gy, gz]
         
         # Extract same features as used in training
         features = []
-        for col in ['ax', 'ay', 'az', 'gx', 'gy', 'gz']:
+        for col_idx in range(6):  # 6 columns: ax, ay, az, gx, gy, gz
+            col_data = data_array[:, col_idx]
             features += [
-                df[col].mean(),
-                df[col].std(),
-                df[col].min(),
-                df[col].max(),
-                df[col].max() - df[col].min()
+                np.mean(col_data),    # mean
+                np.std(col_data),     # standard deviation
+                np.min(col_data),     # minimum
+                np.max(col_data),     # maximum
+                np.max(col_data) - np.min(col_data)  # range
             ]
         
         return np.array(features).reshape(1, -1)

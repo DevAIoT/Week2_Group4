@@ -122,7 +122,7 @@ The ML model recognizes these swing types:
 3. **ML Model Not Loading:**
    - Verify model files exist in `raspberry_pi/models/`
    - Check file permissions
-   - Install scikit-learn: `pip install scikit-learn==1.7.2`
+   - Install required packages: `pip install -r requirements.txt`
 
 ### Performance Issues
 
