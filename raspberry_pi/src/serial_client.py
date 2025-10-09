@@ -109,16 +109,32 @@ class SerialClient:
             # Clear buffer
             self.serial_connection.flushInput()
             
-            # Read a few lines to test format
-            for _ in range(5):
-                line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
-                logger.debug(f"Test line: {line}")
-                
-                if self._parse_imu_line(line):
-                    logger.info("ESP32 data format confirmed")
-                    return True
+            logger.info("Testing ESP32 communication - reading sample data...")
             
-            logger.warning("ESP32 not sending expected data format")
+            # Read more lines and show what we're getting
+            sample_lines = []
+            for i in range(10):
+                line = self.serial_connection.readline().decode('utf-8', errors='ignore').strip()
+                if line:  # Only log non-empty lines
+                    sample_lines.append(line)
+                    logger.info(f"ESP32 sample {i+1}: '{line}'")
+                    
+                    if self._parse_imu_line(line):
+                        logger.info("✅ ESP32 data format confirmed!")
+                        return True
+            
+            # If we get here, no lines parsed successfully
+            logger.error("❌ ESP32 data format not recognized!")
+            logger.error("Sample lines received:")
+            for i, line in enumerate(sample_lines):
+                logger.error(f"  Line {i+1}: '{line}'")
+            
+            logger.error("Expected formats:")
+            logger.error("  1. 'Accel X: 123 | Y: 456 | Z: 789 | Gyro X: 123 | Y: 456 | Z: 789'")
+            logger.error("  2. '1.23,4.56,7.89,1.23,4.56,7.89' (CSV)")
+            logger.error("  3. '1.23 4.56 7.89 1.23 4.56 7.89' (space-separated)")
+            logger.error("  4. '{\"ax\":1.23,\"ay\":4.56,\"az\":7.89,\"gx\":1.23,\"gy\":4.56,\"gz\":7.89}' (JSON)")
+            
             return False
             
         except Exception as e:
@@ -126,40 +142,89 @@ class SerialClient:
             return False
     
     def _parse_imu_line(self, line: str) -> Optional[IMUData]:
-        """Parse ESP32 output line into IMUData"""
+        """Parse ESP32 output line into IMUData - supports multiple formats"""
         try:
-            # Your ESP32 format: "Accel X: -1234 | Y: 5678 | Z: 9012 | Gyro X: -345 | Y: 678 | Z: -901"
-            pattern = r"Accel X:\s*(-?\d+)\s*\|\s*Y:\s*(-?\d+)\s*\|\s*Z:\s*(-?\d+)\s*\|\s*Gyro X:\s*(-?\d+)\s*\|\s*Y:\s*(-?\d+)\s*\|\s*Z:\s*(-?\d+)"
-            match = re.search(pattern, line)
+            # Debug: print what we're receiving
+            logger.debug(f"Parsing line: '{line}'")
             
-            if not match:
-                return None
+            # Try multiple common ESP32 formats
+            imu_data = None
             
-            # Extract raw values
-            ax, ay, az, gx, gy, gz = map(int, match.groups())
+            # Format 1: "Accel X: -1234 | Y: 5678 | Z: 9012 | Gyro X: -345 | Y: 678 | Z: -901"
+            pattern1 = r"Accel X:\s*(-?\d+)\s*\|\s*Y:\s*(-?\d+)\s*\|\s*Z:\s*(-?\d+)\s*\|\s*Gyro X:\s*(-?\d+)\s*\|\s*Y:\s*(-?\d+)\s*\|\s*Z:\s*(-?\d+)"
+            match1 = re.search(pattern1, line)
+            if match1:
+                ax, ay, az, gx, gy, gz = map(int, match1.groups())
+                imu_data = self._create_imu_data(ax, ay, az, gx, gy, gz, scale_raw=True)
             
-            # Convert from raw int16 to physical units
-            # MPU6050 default scales: ±2g = ±16384, ±250°/s = ±131
-            accel_scale = 2.0 * 9.81 / 16384.0  # Convert to m/s²
-            gyro_scale = 250.0 * (3.14159 / 180.0) / 131.0  # Convert to rad/s
+            # Format 2: CSV format "ax,ay,az,gx,gy,gz"
+            if not imu_data and ',' in line:
+                parts = line.strip().split(',')
+                if len(parts) >= 6:
+                    try:
+                        ax, ay, az, gx, gy, gz = map(float, parts[:6])
+                        imu_data = self._create_imu_data(ax, ay, az, gx, gy, gz, scale_raw=False)
+                    except ValueError:
+                        pass
             
-            # Create IMUData object
-            imu_data = IMUData(
-                accel_x=ax * accel_scale,
-                accel_y=ay * accel_scale,
-                accel_z=az * accel_scale,
-                gyro_x=gx * gyro_scale,
-                gyro_y=gy * gyro_scale,
-                gyro_z=gz * gyro_scale,
-                timestamp=int(time.time() * 1000),
-                checksum=0  # No checksum in serial mode
-            )
+            # Format 3: Space-separated "ax ay az gx gy gz"
+            if not imu_data and ' ' in line:
+                parts = line.strip().split()
+                if len(parts) >= 6:
+                    try:
+                        ax, ay, az, gx, gy, gz = map(float, parts[:6])
+                        imu_data = self._create_imu_data(ax, ay, az, gx, gy, gz, scale_raw=False)
+                    except ValueError:
+                        pass
+            
+            # Format 4: JSON-like format
+            if not imu_data and '{' in line:
+                import json
+                try:
+                    data = json.loads(line)
+                    if all(key in data for key in ['ax', 'ay', 'az', 'gx', 'gy', 'gz']):
+                        imu_data = self._create_imu_data(
+                            data['ax'], data['ay'], data['az'],
+                            data['gx'], data['gy'], data['gz'],
+                            scale_raw=False
+                        )
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            
+            if not imu_data:
+                logger.debug(f"No matching format for line: '{line}'")
             
             return imu_data
             
         except Exception as e:
             logger.debug(f"Error parsing line '{line}': {e}")
             return None
+    
+    def _create_imu_data(self, ax, ay, az, gx, gy, gz, scale_raw=True):
+        """Create IMUData object with optional scaling"""
+        if scale_raw:
+            # Convert from raw int16 to physical units
+            # MPU6050 default scales: ±2g = ±16384, ±250°/s = ±131
+            accel_scale = 2.0 * 9.81 / 16384.0  # Convert to m/s²
+            gyro_scale = 250.0 * (3.14159 / 180.0) / 131.0  # Convert to rad/s
+            
+            ax *= accel_scale
+            ay *= accel_scale
+            az *= accel_scale
+            gx *= gyro_scale
+            gy *= gyro_scale
+            gz *= gyro_scale
+        
+        return IMUData(
+            accel_x=float(ax),
+            accel_y=float(ay),
+            accel_z=float(az),
+            gyro_x=float(gx),
+            gyro_y=float(gy),
+            gyro_z=float(gz),
+            timestamp=int(time.time() * 1000),
+            checksum=0  # No checksum in serial mode
+        )
     
     def _start_reading_thread(self):
         """Start background thread for reading serial data"""
