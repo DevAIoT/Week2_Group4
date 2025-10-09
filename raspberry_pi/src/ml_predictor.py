@@ -74,26 +74,18 @@ class MLPredictor:
             self.swing_data_buffer.pop(0)
     
     def extract_features_from_buffer(self, data: List[List[float]]) -> np.ndarray:
-        """Extract statistical features from IMU data buffer"""
+        """Extract mean features from IMU data buffer (same as training)"""
         if len(data) < self.min_swing_samples:
             return None
         
         # Convert to numpy array for easier manipulation
         data_array = np.array(data)  # Shape: (n_samples, 6) - [ax, ay, az, gx, gy, gz]
         
-        # Extract same features as used in training
-        features = []
-        for col_idx in range(6):  # 6 columns: ax, ay, az, gx, gy, gz
-            col_data = data_array[:, col_idx]
-            features += [
-                np.mean(col_data),    # mean
-                np.std(col_data),     # standard deviation
-                np.min(col_data),     # minimum
-                np.max(col_data),     # maximum
-                np.max(col_data) - np.min(col_data)  # range
-            ]
+        # Extract only mean features as used in original training
+        # This matches Test_Model2.py: df.mean().to_numpy().reshape(1, -1)
+        features = np.mean(data_array, axis=0)  # Mean of each column: [ax_mean, ay_mean, az_mean, gx_mean, gy_mean, gz_mean]
         
-        return np.array(features).reshape(1, -1)
+        return features.reshape(1, -1)
     
     def predict_swing_simple(self, imu_data: IMUData) -> Optional[Dict]:
         """Simple real-time prediction using single IMU reading"""
