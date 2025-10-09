@@ -152,17 +152,20 @@ class MLPredictor:
             # Scale the features
             features_scaled = self.scaler.transform(features)
             
+            # Debug: Log the features being used
+            logger.info(f"Raw features: {features[0]}")
+            logger.info(f"Scaled features: {features_scaled[0]}")
+            
             # Make prediction
             prediction = self.model.predict(features_scaled)[0]
             probabilities = self.model.predict_proba(features_scaled)[0]
             
+            # Debug: Log all probabilities
+            prob_dict = {cls: float(prob) for cls, prob in zip(self.model.classes_, probabilities)}
+            logger.info(f"All prediction probabilities: {prob_dict}")
+            
             # Get confidence score
             confidence = max(probabilities) * 100
-            
-            # Create probability dictionary
-            prob_dict = {
-                cls: float(prob) for cls, prob in zip(self.model.classes_, probabilities)
-            }
             
             return {
                 'prediction': prediction,
