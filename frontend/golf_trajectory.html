@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golf Ball Trajectory Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #87CEEB 0%, #98FB98 100%);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2C5F2D;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        canvas {
+            border: 3px solid #2C5F2D;
+            border-radius: 10px;
+            background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 40%, #228B22 40%, #006400 100%);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .slow { background: linear-gradient(45deg, #4CAF50, #45a049); }
+        .medium { background: linear-gradient(45deg, #FF9800, #F57C00); }
+        .fast { background: linear-gradient(45deg, #F44336, #D32F2F); }
+        .curve-left { background: linear-gradient(45deg, #2196F3, #1976D2); }
+        .curve-right { background: linear-gradient(45deg, #9C27B0, #7B1FA2); }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .info {
+            text-align: center;
+            margin-top: 15px;
+            color: #2C5F2D;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏌️ Golf Ball Trajectory Simulator</h1>
+        <canvas id="golfCanvas" width="800" height="400"></canvas>
+        
+        <div class="controls">
+            <button class="slow" onclick="showTrajectory('SLOW')">Slow Shot</button>
+            <button class="medium" onclick="showTrajectory('MEDIUM')">Medium Shot</button>
+            <button class="fast" onclick="showTrajectory('FAST')">Fast Shot</button>
+            <button class="curve-left" onclick="showTrajectory('CURVE_LEFT')">Hook Left</button>
+            <button class="curve-right" onclick="showTrajectory('CURVE_RIGHT')">Slice Right</button>
+        </div>
+        
+        <div class="info">
+            Click any button to see realistic golf ball physics in action!
+        </div>
+    </div>
+
+    <script>
+        class GolfTrajectoryVisualizer {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.isAnimating = false;
+                
+                // Animation properties
+                this.ballX = 50;
+                this.ballY = 350;
+                this.ballRadius = 8;
+                this.trail = [];
+                this.maxTrailLength = 20;
+                
+                // Wind animation
+                this.windOffset = 0;
+                
+                // Initialize grass texture
+                this.createGrassTexture();
+                this.drawStaticElements();
+                
+                // Start wind animation loop
+                this.animateWind();
+            }
+
+            createGrassTexture() {
+                // Create grass texture pattern
+                const grassCanvas = document.createElement('canvas');
+                grassCanvas.width = 50;
+                grassCanvas.height = 50;
+                const grassCtx = grassCanvas.getContext('2d');
+                
+                // Base grass color
+                grassCtx.fillStyle = '#228B22';
+                grassCtx.fillRect(0, 0, 50, 50);
+                
+                // Add grass blade details
+                for (let i = 0; i < 30; i++) {
+                    grassCtx.strokeStyle = `hsl(120, 60%, ${25 + Math.random() * 15}%)`;
+                    grassCtx.lineWidth = 1;
+                    grassCtx.beginPath();
+                    grassCtx.moveTo(Math.random() * 50, 50);
+                    grassCtx.lineTo(Math.random() * 50, 40 + Math.random() * 10);
+                    grassCtx.stroke();
+                }
+                
+                this.grassPattern = this.ctx.createPattern(grassCanvas, 'repeat');
+            }
+
+            drawStaticElements() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Sky gradient
+                const skyGradient = this.ctx.createLinearGradient(0, 0, 0, 160);
+                skyGradient.addColorStop(0, '#87CEEB');
+                skyGradient.addColorStop(0.7, '#B0E0E6');
+                skyGradient.addColorStop(1, '#98FB98');
+                
+                this.ctx.fillStyle = skyGradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, 160);
+                
+                // Ground with grass texture
+                this.ctx.fillStyle = this.grassPattern;
+                this.ctx.fillRect(0, 160, this.canvas.width, this.canvas.height - 160);
+                
+                // Tee area
+                this.ctx.fillStyle = '#8FBC8F';
+                this.ctx.fillRect(30, 330, 40, 40);
+                
+                // Distance markers
+                for (let i = 100; i <= 400; i += 100) {
+                    const x = 50 + (i * 1.8); // Scale for canvas
+                    this.ctx.strokeStyle = '#FFFFFF';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 160);
+                    this.ctx.lineTo(x, 180);
+                    this.ctx.stroke();
+                    
+                    this.ctx.fillStyle = '#FFFFFF';
+                    this.ctx.font = 'bold 12px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(i + 'm', x, 195);
+                }
+                
+                // Flag at target
+                this.drawFlag();
+            }
+
+            drawFlag() {
+                const flagX = 750;
+                const flagY = 160;
+                
+                // Flag pole
+                this.ctx.strokeStyle = '#8B4513';
+                this.ctx.lineWidth = 4;
+                this.ctx.beginPath();
+                this.ctx.moveTo(flagX, flagY);
+                this.ctx.lineTo(flagX, flagY + 100);
+                this.ctx.stroke();
+                
+                // Animated flag
+                const windEffect = Math.sin(this.windOffset) * 10;
+                this.ctx.fillStyle = '#FF0000';
+                this.ctx.beginPath();
+                this.ctx.moveTo(flagX, flagY);
+                this.ctx.quadraticCurveTo(flagX + 30 + windEffect, flagY + 10, flagX + 25, flagY + 20);
+                this.ctx.lineTo(flagX, flagY + 20);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Flag details
+                this.ctx.strokeStyle = '#FFFFFF';
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+            }
+
+            drawBall(x, y, rotation = 0) {
+                // Ball shadow
+                const shadowOffset = 5;
+                const shadowY = 370 - ((y - 350) * 0.1); // Shadow follows ground
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                this.ctx.beginPath();
+                this.ctx.ellipse(x + shadowOffset, shadowY, this.ballRadius * 0.8, this.ballRadius * 0.4, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Ball gradient
+                const ballGradient = this.ctx.createRadialGradient(
+                    x - 3, y - 3, 0,
+                    x, y, this.ballRadius
+                );
+                ballGradient.addColorStop(0, '#FFFFFF');
+                ballGradient.addColorStop(0.7, '#F5F5F5');
+                ballGradient.addColorStop(1, '#E0E0E0');
+                
+                this.ctx.fillStyle = ballGradient;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, this.ballRadius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Dimple pattern
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i * Math.PI * 2 / 8) + rotation;
+                    const dimpleX = x + Math.cos(angle) * 4;
+                    const dimpleY = y + Math.sin(angle) * 4;
+                    this.ctx.beginPath();
+                    this.ctx.arc(dimpleX, dimpleY, 1, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                // Ball outline
+                this.ctx.strokeStyle = '#CCCCCC';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, this.ballRadius, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+
+            drawTrail() {
+                if (this.trail.length < 2) return;
+                
+                for (let i = 1; i < this.trail.length; i++) {
+                    const alpha = i / this.trail.length;
+                    const width = alpha * 3;
+                    
+                    this.ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.5})`;
+                    this.ctx.lineWidth = width;
+                    this.ctx.lineCap = 'round';
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.trail[i-1].x, this.trail[i-1].y);
+                    this.ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                    this.ctx.stroke();
+                }
+            }
+
+            calculateTrajectory(type) {
+                const trajectories = {
+                    SLOW: { distance: 150, height: 15, duration: 4000, curve: 0 },
+                    MEDIUM: { distance: 250, height: 25, duration: 3000, curve: 0 },
+                    FAST: { distance: 350, height: 35, duration: 2000, curve: 0 },
+                    CURVE_LEFT: { distance: 250, height: 25, duration: 3000, curve: -30 },
+                    CURVE_RIGHT: { distance: 250, height: 25, duration: 3000, curve: 30 }
+                };
+                
+                return trajectories[type];
+            }
+
+            animateTrajectory(type) {
+                if (this.isAnimating) return;
+                
+                this.isAnimating = true;
+                this.trail = [];
+                
+                const trajectory = this.calculateTrajectory(type);
+                const startTime = performance.now();
+                const startX = 50;
+                const startY = 350;
+                
+                const animate = (currentTime) => {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / trajectory.duration, 1);
+                    
+                    // Physics calculations
+                    let x = startX + (progress * trajectory.distance * 1.8); // Scale for canvas
+                    
+                    // Parabolic trajectory for height
+                    const heightProgress = 4 * progress * (1 - progress);
+                    let y = startY - (heightProgress * trajectory.height * 2);
+                    
+                    // Add curve effect
+                    if (trajectory.curve !== 0) {
+                        const curveProgress = Math.sin(progress * Math.PI);
+                        y += trajectory.curve * curveProgress * 0.5;
+                        x += trajectory.curve * curveProgress * 0.3;
+                    }
+                    
+                    // Update ball position
+                    this.ballX = x;
+                    this.ballY = y;
+                    
+                    // Add to trail
+                    this.trail.push({ x, y });
+                    if (this.trail.length > this.maxTrailLength) {
+                        this.trail.shift();
+                    }
+                    
+                    // Redraw
+                    this.drawStaticElements();
+                    this.drawTrail();
+                    this.drawBall(x, y, elapsed * 0.01);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        // Ball landed
+                        this.isAnimating = false;
+                        this.trail = [];
+                        
+                        // Reset ball position after delay
+                        setTimeout(() => {
+                            this.ballX = startX;
+                            this.ballY = startY;
+                            this.drawStaticElements();
+                            this.drawBall(this.ballX, this.ballY);
+                        }, 1000);
+                    }
+                };
+                
+                requestAnimationFrame(animate);
+            }
+
+            animateWind() {
+                this.windOffset += 0.05;
+                if (!this.isAnimating) {
+                    this.drawStaticElements();
+                    this.drawBall(this.ballX, this.ballY);
+                }
+                requestAnimationFrame(() => this.animateWind());
+            }
+        }
+
+        // Initialize the visualizer
+        let visualizer;
+        window.addEventListener('load', () => {
+            visualizer = new GolfTrajectoryVisualizer('golfCanvas');
+        });
+
+        // Global function for trajectory display
+        function showTrajectory(type) {
+            if (visualizer) {
+                visualizer.animateTrajectory(type);
+            }
+        }
+    </script>
+</body>
+</html>

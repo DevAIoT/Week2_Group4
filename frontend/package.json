@@ -1,0 +1,30 @@
+{
+  "name": "golf-swing-simulator",
+  "version": "1.0.0",
+  "description": "3D Golf Swing Trajectory Simulator",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "http-server dist -p 3000"
+  },
+  "dependencies": {
+    "three": "^0.157.0",
+    "cannon-es": "^0.20.0",
+    "dat.gui": "^0.7.9"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0",
+    "http-server": "^14.1.1"
+  },
+  "keywords": [
+    "golf",
+    "3d",
+    "trajectory",
+    "simulator",
+    "three.js"
+  ],
+  "author": "Golf Swing Analyzer Team",
+  "license": "MIT"
+}

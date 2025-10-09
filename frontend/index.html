@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golf Swing Analyzer - 3D Trajectory Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            overflow: hidden;
+            color: white;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #status-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 300px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        #metrics-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 250px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        #trajectory-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 400px;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #4CAF50;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 5px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 5px 0;
+        }
+
+        .status-label {
+            color: #ccc;
+        }
+
+        .status-value {
+            font-weight: bold;
+        }
+
+        .status-connected {
+            color: #4CAF50;
+        }
+
+        .status-disconnected {
+            color: #f44336;
+        }
+
+        .swing-phase {
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-transform: uppercase;
+        }
+
+        .phase-idle { background-color: #666; }
+        .phase-address { background-color: #ff9800; }
+        .phase-backswing { background-color: #2196f3; }
+        .phase-downswing { background-color: #9c27b0; }
+        .phase-impact { background-color: #f44336; }
+        .phase-follow-through { background-color: #4caf50; }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 3px 0;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .controls {
+            margin-top: 15px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        #connection-status {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .connection-connected {
+            background-color: #4CAF50;
+        }
+
+        .connection-disconnected {
+            background-color: #f44336;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 24px;
+            z-index: 200;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        
+        <div id="ui-overlay">
+            <div id="loading">
+                <div class="loading-spinner"></div>
+                <div>Initializing Golf Simulator...</div>
+            </div>
+
+            <div id="status-panel" style="display: none;">
+                <div class="panel-title">System Status</div>
+                <div class="status-item">
+                    <span class="status-label">BLE Connection:</span>
+                    <span id="ble-status" class="status-value status-disconnected">Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">IMU Active:</span>
+                    <span id="imu-status" class="status-value status-disconnected">Inactive</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">WebSocket:</span>
+                    <span id="websocket-status" class="status-value status-disconnected">Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Last Data:</span>
+                    <span id="last-data" class="status-value">Never</span>
+                </div>
+                
+                <div id="swing-phase" class="swing-phase phase-idle">Idle</div>
+                
+                <div class="controls">
+                    <button id="clear-trajectory">Clear Trajectory</button>
+                    <button id="reset-camera">Reset Camera</button>
+                </div>
+            </div>
+
+            <div id="metrics-panel" style="display: none;">
+                <div class="panel-title">Swing Metrics</div>
+                <div class="metric-item">
+                    <span>Max Speed:</span>
+                    <span id="max-speed" class="metric-value">0 m/s</span>
+                </div>
+                <div class="metric-item">
+                    <span>Impact Speed:</span>
+                    <span id="impact-speed" class="metric-value">0 m/s</span>
+                </div>
+                <div class="metric-item">
+                    <span>Swing Angle:</span>
+                    <span id="swing-angle" class="metric-value">0°</span>
+                </div>
+                <div class="metric-item">
+                    <span>Attack Angle:</span>
+                    <span id="attack-angle" class="metric-value">0°</span>
+                </div>
+                <div class="metric-item">
+                    <span>Tempo:</span>
+                    <span id="tempo" class="metric-value">0s</span>
+                </div>
+                <div class="metric-item">
+                    <span>Swing Path:</span>
+                    <span id="swing-path" class="metric-value">Unknown</span>
+                </div>
+            </div>
+
+            <div id="trajectory-panel" style="display: none;">
+                <div class="panel-title">Ball Trajectory</div>
+                <div class="metric-item">
+                    <span>Ball Speed:</span>
+                    <span id="ball-speed" class="metric-value">0 m/s</span>
+                </div>
+                <div class="metric-item">
+                    <span>Launch Angle:</span>
+                    <span id="launch-angle" class="metric-value">0°</span>
+                </div>
+                <div class="metric-item">
+                    <span>Total Distance:</span>
+                    <span id="total-distance" class="metric-value">0 m</span>
+                </div>
+                <div class="metric-item">
+                    <span>Max Height:</span>
+                    <span id="max-height" class="metric-value">0 m</span>
+                </div>
+                <div class="metric-item">
+                    <span>Flight Time:</span>
+                    <span id="flight-time" class="metric-value">0s</span>
+                </div>
+                <div class="metric-item">
+                    <span>Spin Rate:</span>
+                    <span id="spin-rate" class="metric-value">0 rpm</span>
+                </div>
+            </div>
+
+            <div id="connection-status" class="connection-disconnected">
+                System Offline
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
