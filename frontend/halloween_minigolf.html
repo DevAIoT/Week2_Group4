@@ -230,16 +230,21 @@
                 // Recalculate distance conversion
                 this.metersToPixels = (this.startY - this.holeY) / 30; // 30m total distance
                 
-                // Update course bounds for moat
-                const holeAreaTop = this.holeY - 20;
-                const courseHeight = this.startY - holeAreaTop;
+                // Update course bounds for moat - top aligns with start of grass area
+                const grassStartY = this.canvas.height * 0.25; // Where grass begins (25% down)
+                const moatWidth = 2 * this.metersToPixels;
+                const courseHeight = this.startY - grassStartY - moatWidth; // Account for moat width
+                
+                // Calculate centerY so that courseY - moatWidth = grassStartY
+                // courseY = centerY - height/2, so centerY - height/2 - moatWidth = grassStartY
+                // centerY = grassStartY + moatWidth + height/2
                 
                 this.courseBounds = {
                     width: 40 * this.metersToPixels,
                     height: courseHeight,
                     centerX: this.canvas.width / 2,
-                    centerY: holeAreaTop + courseHeight / 2,
-                    moatWidth: 2 * this.metersToPixels
+                    centerY: grassStartY + moatWidth + courseHeight / 2,
+                    moatWidth: moatWidth
                 };
                 
                 // Update ball position if it's at start
@@ -273,17 +278,51 @@
 
             generatePumpkins() {
                 const pumpkins = [];
-                for (let i = 0; i < 4; i++) {
-                    // Place pumpkins on sides, away from center fairway
-                    const sideOffset = i % 2 === 0 ? -200 - Math.random() * 100 : 200 + Math.random() * 100;
+                const grassTop = this.canvas.height * 0.25;
+                
+                // Get course and moat boundaries to avoid overlaps
+                const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
+                const courseY = this.courseBounds.centerY - this.courseBounds.height / 2;
+                const courseWidth = this.courseBounds.width;
+                const courseHeight = this.courseBounds.height;
+                const moatWidth = this.courseBounds.moatWidth;
+                
+                // Double the number of pumpkins (8 instead of 4)
+                for (let i = 0; i < 8; i++) {
+                    let pumpkinX, pumpkinY;
+                    let attempts = 0;
+                    
+                    // Try to place pumpkin away from course and moat
+                    do {
+                        // Place on left or right side of the course
+                        const onLeftSide = i % 2 === 0;
+                        if (onLeftSide) {
+                            pumpkinX = 50 + Math.random() * (courseX - moatWidth - 100);
+                        } else {
+                            pumpkinX = courseX + courseWidth + moatWidth + 50 + Math.random() * (this.canvas.width - courseX - courseWidth - moatWidth - 100);
+                        }
+                        
+                        pumpkinY = grassTop + 50 + Math.random() * (this.canvas.height - grassTop - 100);
+                        attempts++;
+                    } while (attempts < 10 && this.isInCourseArea(pumpkinX, pumpkinY, courseX, courseY, courseWidth, courseHeight, moatWidth));
+                    
                     pumpkins.push({
-                        x: this.canvas.width / 2 + sideOffset,
-                        y: this.canvas.height * 0.4 + Math.random() * this.canvas.height * 0.4,
-                        size: 20 + Math.random() * 15,
+                        x: Math.max(50, Math.min(this.canvas.width - 50, pumpkinX)),
+                        y: Math.max(grassTop + 50, Math.min(this.canvas.height - 50, pumpkinY)),
+                        size: 15 + Math.random() * 20,
                         glowPhase: Math.random() * Math.PI * 2
                     });
                 }
                 return pumpkins;
+            }
+
+            isInCourseArea(x, y, courseX, courseY, courseWidth, courseHeight, moatWidth) {
+                // Check if position is in course or moat area
+                const buffer = 30; // Extra space around course/moat
+                return (x > courseX - moatWidth - buffer && 
+                        x < courseX + courseWidth + moatWidth + buffer &&
+                        y > courseY - moatWidth - buffer && 
+                        y < courseY + courseHeight + buffer);
             }
 
             generateGhosts() {
@@ -400,14 +439,15 @@
             }
 
             isInWaterArea(houseX, houseY, courseX, courseY, courseWidth, courseHeight, moatWidth) {
-                // Check if house would be in the water moat area
-                const waterLeft = courseX - moatWidth;
-                const waterRight = courseX + courseWidth + moatWidth;
-                const waterTop = courseY - moatWidth;
-                const waterBottom = courseY + courseHeight + moatWidth;
+                // Check if house would be in the water moat area or golf course lane
+                const buffer = 40; // Extra buffer around course
+                const areaLeft = courseX - moatWidth - buffer;
+                const areaRight = courseX + courseWidth + moatWidth + buffer;
+                const areaTop = courseY - moatWidth - buffer;
+                const areaBottom = courseY + courseHeight + buffer;
                 
-                return (houseX > waterLeft && houseX < waterRight && 
-                        houseY > waterTop && houseY < waterBottom);
+                return (houseX > areaLeft && houseX < areaRight && 
+                        houseY > areaTop && houseY < areaBottom);
             }
 
             drawBackground() {
@@ -924,6 +964,19 @@
             }
 
             drawHole() {
+                // Small green patch around the hole
+                this.ctx.fillStyle = '#228B22';
+                this.ctx.beginPath();
+                this.ctx.arc(this.holeX, this.holeY, 25, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Green patch border
+                this.ctx.strokeStyle = '#32CD32';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(this.holeX, this.holeY, 25, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
                 // Hole with spooky glow
                 this.ctx.fillStyle = '#000000';
                 this.ctx.shadowColor = '#8a2be2';
@@ -966,20 +1019,20 @@
                 const courseHeight = this.courseBounds.height;
                 const moatWidth = this.courseBounds.moatWidth;
                 
-                // Draw water moat around the golf course boundary
+                // Direct positioning: top moat aligns with grass start
+                const grassStartY = this.canvas.height * 0.25;
+                
+                // Draw U-shaped water moat (no bottom)
                 this.ctx.fillStyle = '#1e3a8a';
                 
-                // Top moat
-                this.ctx.fillRect(courseX - moatWidth, courseY - moatWidth, courseWidth + 2 * moatWidth, moatWidth);
+                // Top moat - positioned directly at grass start
+                this.ctx.fillRect(courseX - moatWidth, grassStartY, courseWidth + 2 * moatWidth, moatWidth);
                 
-                // Bottom moat
-                this.ctx.fillRect(courseX - moatWidth, courseY + courseHeight, courseWidth + 2 * moatWidth, moatWidth);
+                // Left moat - starts from grass line
+                this.ctx.fillRect(courseX - moatWidth, grassStartY + moatWidth, moatWidth, this.startY - grassStartY - moatWidth);
                 
-                // Left moat
-                this.ctx.fillRect(courseX - moatWidth, courseY, moatWidth, courseHeight);
-                
-                // Right moat
-                this.ctx.fillRect(courseX + courseWidth, courseY, moatWidth, courseHeight);
+                // Right moat - starts from grass line
+                this.ctx.fillRect(courseX + courseWidth, grassStartY + moatWidth, moatWidth, this.startY - grassStartY - moatWidth);
                 
                 // Water surface animation on moat borders
                 this.ctx.strokeStyle = '#3b82f6';
@@ -989,49 +1042,57 @@
                 this.ctx.beginPath();
                 for (let x = courseX - moatWidth; x < courseX + courseWidth + moatWidth; x += 15) {
                     const waveHeight = Math.sin((x - courseX) * 0.03 + this.animationFrame * 0.08) * 2;
-                    this.ctx.lineTo(x, courseY - moatWidth/2 + waveHeight);
-                }
-                this.ctx.stroke();
-                
-                // Animated waves on bottom border
-                this.ctx.beginPath();
-                for (let x = courseX - moatWidth; x < courseX + courseWidth + moatWidth; x += 15) {
-                    const waveHeight = Math.sin((x - courseX) * 0.03 + this.animationFrame * 0.08) * 2;
-                    this.ctx.lineTo(x, courseY + courseHeight + moatWidth/2 + waveHeight);
+                    this.ctx.lineTo(x, grassStartY + moatWidth/2 + waveHeight);
                 }
                 this.ctx.stroke();
                 
                 // Animated waves on left border
                 this.ctx.beginPath();
-                for (let y = courseY; y < courseY + courseHeight; y += 15) {
-                    const waveHeight = Math.sin((y - courseY) * 0.03 + this.animationFrame * 0.08) * 2;
+                for (let y = grassStartY + moatWidth; y < this.startY; y += 15) {
+                    const waveHeight = Math.sin((y - grassStartY) * 0.03 + this.animationFrame * 0.08) * 2;
                     this.ctx.lineTo(courseX - moatWidth/2 + waveHeight, y);
                 }
                 this.ctx.stroke();
                 
                 // Animated waves on right border
                 this.ctx.beginPath();
-                for (let y = courseY; y < courseY + courseHeight; y += 15) {
-                    const waveHeight = Math.sin((y - courseY) * 0.03 + this.animationFrame * 0.08) * 2;
+                for (let y = grassStartY + moatWidth; y < this.startY; y += 15) {
+                    const waveHeight = Math.sin((y - grassStartY) * 0.03 + this.animationFrame * 0.08) * 2;
                     this.ctx.lineTo(courseX + courseWidth + moatWidth/2 + waveHeight, y);
                 }
                 this.ctx.stroke();
                 
-                // Golf course boundary markers (inside the moat)
+                // Golf course boundary markers (U-shaped, no bottom)
                 this.ctx.strokeStyle = '#ff6b35';
                 this.ctx.lineWidth = 2;
                 this.ctx.setLineDash([5, 5]);
-                this.ctx.strokeRect(courseX, courseY, courseWidth, courseHeight);
+                
+                // Top boundary at grass line
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX + courseWidth, grassStartY + moatWidth);
+                this.ctx.stroke();
+                
+                // Left boundary
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX, this.startY);
+                this.ctx.stroke();
+                
+                // Right boundary
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX + courseWidth, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX + courseWidth, this.startY);
+                this.ctx.stroke();
+                
                 this.ctx.setLineDash([]);
                 
-                // Add warning signs at corners
+                // Add warning signs at top corners only
                 this.ctx.fillStyle = '#ff6b35';
                 this.ctx.font = '12px Arial';
                 this.ctx.textAlign = 'center';
-                this.ctx.fillText('⚠️', courseX, courseY - 5);
-                this.ctx.fillText('⚠️', courseX + courseWidth, courseY - 5);
-                this.ctx.fillText('⚠️', courseX, courseY + courseHeight + 15);
-                this.ctx.fillText('⚠️', courseX + courseWidth, courseY + courseHeight + 15);
+                this.ctx.fillText('⚠️', courseX, grassStartY - 5);
+                this.ctx.fillText('⚠️', courseX + courseWidth, grassStartY - 5);
             }
 
             drawGolfer() {
@@ -1161,16 +1222,15 @@
             }
 
             checkOutOfBounds() {
-                // Check if ball is outside the golf course boundary (40m x 50m)
+                // Check if ball is outside the U-shaped course boundary (no bottom boundary)
                 const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
-                const courseY = this.courseBounds.centerY - this.courseBounds.height / 2;
                 const courseWidth = this.courseBounds.width;
-                const courseHeight = this.courseBounds.height;
+                const grassStartY = this.canvas.height * 0.25;
+                const moatWidth = this.courseBounds.moatWidth;
                 
                 return (this.ballX < courseX || 
                         this.ballX > courseX + courseWidth ||
-                        this.ballY < courseY || 
-                        this.ballY > courseY + courseHeight);
+                        this.ballY < grassStartY + moatWidth); // Only top, left, and right boundaries
             }
 
             animateShot(type) {
