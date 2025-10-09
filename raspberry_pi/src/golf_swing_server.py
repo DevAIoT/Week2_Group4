@@ -259,21 +259,30 @@ class GolfSwingServer:
                     'gyro_z': imu_data.gyro_z
                 })
             
-            # Broadcast real-time IMU data occasionally
+            # Schedule broadcast in the main event loop occasionally
             if int(time.time() * 10) % 10 == 0:  # Every 1 second
-                asyncio.create_task(self._broadcast_message({
-                    'type': 'imu_data',
-                    'data': {
-                        'accel_x': imu_data.accel_x,
-                        'accel_y': imu_data.accel_y,
-                        'accel_z': imu_data.accel_z,
-                        'gyro_x': imu_data.gyro_x,
-                        'gyro_y': imu_data.gyro_y,
-                        'gyro_z': imu_data.gyro_z,
-                        'timestamp': imu_data.timestamp
-                    },
-                    'recording': self.is_recording
-                }))
+                # Schedule the broadcast message in the main event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop.call_soon_threadsafe(
+                            lambda: asyncio.create_task(self._broadcast_message({
+                                'type': 'imu_data',
+                                'data': {
+                                    'accel_x': imu_data.accel_x,
+                                    'accel_y': imu_data.accel_y,
+                                    'accel_z': imu_data.accel_z,
+                                    'gyro_x': imu_data.gyro_x,
+                                    'gyro_y': imu_data.gyro_y,
+                                    'gyro_z': imu_data.gyro_z,
+                                    'timestamp': imu_data.timestamp
+                                },
+                                'recording': self.is_recording
+                            }))
+                        )
+                except RuntimeError:
+                    # No event loop running, skip broadcast
+                    pass
             
         except Exception as e:
             logger.error(f"Error handling IMU data: {e}")
