@@ -62,6 +62,70 @@
             z-index: 100;
         }
 
+        .swing-controls {
+            position: absolute;
+            top: 20px;
+            right: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .swing-button {
+            padding: 15px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            border: 3px solid #32cd32;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #32cd32;
+            background: rgba(0, 0, 0, 0.8);
+            text-transform: uppercase;
+            font-family: 'Creepster', Arial;
+            min-width: 150px;
+        }
+
+        .swing-button:hover {
+            background: #32cd32;
+            color: #000;
+            box-shadow: 0 0 20px #32cd32;
+        }
+
+        .swing-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .recording {
+            background: #ff4444 !important;
+            border-color: #ff4444 !important;
+            color: white !important;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .status-display {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff6b35;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ff6b35;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+        }
+
         button {
             padding: 12px 20px;
             font-size: 14px;
@@ -134,12 +198,23 @@
         
         <div class="crosshair"></div>
         
+        <div class="swing-controls">
+            <button id="swingButton" class="swing-button" onclick="startSwingRecording()">🏌️ Swing!</button>
+            <div id="swingStatus" style="color: #32cd32; font-size: 14px; text-align: center;"></div>
+        </div>
+        
         <div class="controls">
             <button onclick="takeShot('SLOW')">Gentle</button>
             <button onclick="takeShot('MEDIUM')">Normal</button>
             <button onclick="takeShot('FAST')">Power</button>
             <button onclick="takeShot('CURVE_LEFT')">Curve Left</button>
             <button onclick="takeShot('CURVE_RIGHT')">Curve Right</button>
+        </div>
+        
+        <div class="status-display" id="statusDisplay">
+            <div id="connectionStatus">🔗 Connecting to server...</div>
+            <div id="modelStatus">🤖 Loading ML model...</div>
+            <div id="esp32Status">📡 Connecting to ESP32...</div>
         </div>
     </div>
 
@@ -1412,9 +1487,6 @@
 
         // Initialize the game
         let miniGolf;
-        window.addEventListener('load', () => {
-            miniGolf = new HalloweenMiniGolf('miniGolfCanvas');
-        });
 
         // Global function for taking shots
         function takeShot(type) {
@@ -1422,6 +1494,247 @@
                 miniGolf.animateShot(type);
             }
         }
+
+        // WebSocket connection for ML model integration
+        class SwingWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isRecording = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 2000;
+                
+                this.connect();
+            }
+            
+            connect() {
+                try {
+                    // Connect to Raspberry Pi WebSocket server
+                    // Change this IP to your Raspberry Pi's IP address
+                    this.ws = new WebSocket('ws://10.78.111.133:8765');
+                    
+                    this.ws.onopen = (event) => {
+                        console.log('Connected to golf swing server');
+                        this.reconnectAttempts = 0;
+                        this.updateStatus('connectionStatus', '🔗 Connected to server', '#32cd32');
+                        
+                        // Request initial status
+                        this.send({type: 'get_status'});
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (e) {
+                            console.error('Error parsing WebSocket message:', e);
+                        }
+                    };
+                    
+                    this.ws.onclose = (event) => {
+                        console.log('WebSocket connection closed');
+                        this.updateStatus('connectionStatus', '🔗 Connection lost', '#ff4444');
+                        this.attemptReconnect();
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateStatus('connectionStatus', '🔗 Connection error', '#ff4444');
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to connect to WebSocket:', error);
+                    this.updateStatus('connectionStatus', '🔗 Failed to connect', '#ff4444');
+                    this.attemptReconnect();
+                }
+            }
+            
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    this.updateStatus('connectionStatus', `🔗 Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, '#ffaa00');
+                    
+                    setTimeout(() => {
+                        this.connect();
+                    }, this.reconnectDelay * this.reconnectAttempts);
+                } else {
+                    this.updateStatus('connectionStatus', '🔗 Connection failed', '#ff4444');
+                }
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                } else {
+                    console.error('WebSocket not connected');
+                }
+            }
+            
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'status':
+                        this.handleStatusUpdate(data);
+                        break;
+                        
+                    case 'recording_started':
+                        this.handleRecordingStarted(data);
+                        break;
+                        
+                    case 'recording_stopped':
+                        this.handleRecordingStopped(data);
+                        break;
+                        
+                    case 'swing_prediction':
+                        this.handleSwingPrediction(data);
+                        break;
+                        
+                    case 'error':
+                        this.handleError(data);
+                        break;
+                        
+                    case 'imu_data':
+                        // Optional: handle real-time IMU data
+                        break;
+                        
+                    default:
+                        console.log('Unknown message type:', data.type, data);
+                }
+            }
+            
+            handleStatusUpdate(data) {
+                if (data.ml_model_ready) {
+                    this.updateStatus('modelStatus', '🤖 ML model ready', '#32cd32');
+                } else {
+                    this.updateStatus('modelStatus', '🤖 ML model not ready', '#ff4444');
+                }
+                
+                if (data.esp32_connected) {
+                    this.updateStatus('esp32Status', '📡 ESP32 connected', '#32cd32');
+                } else {
+                    this.updateStatus('esp32Status', '📡 ESP32 disconnected', '#ff4444');
+                }
+                
+                // Update swing button state
+                this.updateSwingButton(data.ml_model_ready && data.esp32_connected);
+            }
+            
+            handleRecordingStarted(data) {
+                this.isRecording = true;
+                const button = document.getElementById('swingButton');
+                const status = document.getElementById('swingStatus');
+                
+                button.textContent = '🔴 Recording...';
+                button.classList.add('recording');
+                button.disabled = true;
+                
+                status.textContent = `Recording for ${data.duration} seconds...`;
+                
+                // Start countdown
+                let timeLeft = data.duration;
+                const countdown = setInterval(() => {
+                    timeLeft -= 0.1;
+                    if (timeLeft <= 0) {
+                        clearInterval(countdown);
+                        status.textContent = 'Processing swing...';
+                    } else {
+                        status.textContent = `Recording: ${timeLeft.toFixed(1)}s remaining`;
+                    }
+                }, 100);
+            }
+            
+            handleRecordingStopped(data) {
+                this.isRecording = false;
+                const status = document.getElementById('swingStatus');
+                status.textContent = `Collected ${data.samples_collected} samples. Analyzing...`;
+            }
+            
+            handleSwingPrediction(data) {
+                const button = document.getElementById('swingButton');
+                const status = document.getElementById('swingStatus');
+                
+                // Reset button
+                button.textContent = '🏌️ Swing!';
+                button.classList.remove('recording');
+                button.disabled = false;
+                
+                // Show prediction result
+                status.innerHTML = `
+                    Swing: <strong>${data.prediction}</strong><br>
+                    Confidence: ${data.confidence}%
+                `;
+                
+                // Trigger the corresponding animation in the game
+                if (miniGolf && !miniGolf.isAnimating) {
+                    console.log(`ML predicted: ${data.prediction}, triggering: ${data.trajectory_type}`);
+                    miniGolf.animateShot(data.trajectory_type);
+                    
+                    // Clear status after a delay
+                    setTimeout(() => {
+                        status.textContent = '';
+                    }, 3000);
+                }
+            }
+            
+            handleError(data) {
+                const status = document.getElementById('swingStatus');
+                status.textContent = `Error: ${data.message}`;
+                status.style.color = '#ff4444';
+                
+                // Reset button if recording
+                if (this.isRecording) {
+                    const button = document.getElementById('swingButton');
+                    button.textContent = '🏌️ Swing!';
+                    button.classList.remove('recording');
+                    button.disabled = false;
+                    this.isRecording = false;
+                }
+                
+                // Clear error after delay
+                setTimeout(() => {
+                    status.textContent = '';
+                    status.style.color = '#32cd32';
+                }, 5000);
+            }
+            
+            updateStatus(elementId, text, color = '#ff6b35') {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.textContent = text;
+                    element.style.color = color;
+                }
+            }
+            
+            updateSwingButton(enabled) {
+                const button = document.getElementById('swingButton');
+                if (button) {
+                    button.disabled = !enabled || this.isRecording;
+                }
+            }
+            
+            startRecording() {
+                if (!this.isRecording && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.send({type: 'start_recording'});
+                }
+            }
+        }
+
+        // Initialize WebSocket connection
+        let swingSocket;
+        
+        // Global function for starting swing recording
+        function startSwingRecording() {
+            if (swingSocket) {
+                swingSocket.startRecording();
+            } else {
+                alert('Not connected to server. Please check connection.');
+            }
+        }
+
+        // Initialize everything when page loads
+        window.addEventListener('load', () => {
+            miniGolf = new HalloweenMiniGolf('miniGolfCanvas');
+            swingSocket = new SwingWebSocket();
+        });
     </script>
 </body>
 </html>

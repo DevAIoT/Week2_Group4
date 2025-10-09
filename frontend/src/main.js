@@ -24,7 +24,7 @@ class App {
             await this.simulator.init();
             
             // Initialize WebSocket connection
-            this.websocketClient = new WebSocketClient('ws://localhost:8765');
+            this.websocketClient = new WebSocketClient('ws://10.78.111.133:8765');
             this.setupWebSocketHandlers();
             
             // Setup UI event handlers
