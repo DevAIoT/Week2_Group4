@@ -31,15 +31,14 @@ class GolfSwingServer:
         
         # Initialize components
         self.serial_client = SerialClient(self.config)
-        self.swing_classifier = RuleBasedSwingClassifier()
-        self.swing_classifier.is_trained = True  # Skip training for real-time use
+        self.swing_classifier = RuleBasedSwingClassifier()  # Now auto-initializes with default rules
         
         logger.info("Using advanced physics-based swing classifier")
         
         # Recording state
         self.is_recording = False
         self.recording_start_time = None
-        self.recording_duration = 2.0  # 2 seconds
+        self.recording_duration = 1.5  # 1.5 seconds
         self.recorded_data = []
         
         # Setup logging
@@ -161,7 +160,7 @@ class GolfSwingServer:
             })
             return
         
-        logger.info("Starting swing recording for 2 seconds...")
+        logger.info("Starting swing recording for 1.5 seconds...")
         self.is_recording = True
         self.recording_start_time = time.time()
         self.recorded_data = []
@@ -171,7 +170,7 @@ class GolfSwingServer:
             'duration': self.recording_duration
         })
         
-        # Schedule automatic stop after 5 seconds
+        # Schedule automatic stop after 1.5 seconds
         asyncio.create_task(self._auto_stop_recording())
     
     async def _auto_stop_recording(self):

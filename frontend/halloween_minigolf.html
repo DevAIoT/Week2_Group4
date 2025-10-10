@@ -1665,7 +1665,7 @@
                 
                 // Trigger the corresponding animation in the game
                 if (miniGolf && !miniGolf.isAnimating) {
-                    console.log(`ML predicted: ${data.prediction}, triggering: ${data.trajectory_type}`);
+                    console.log(`Physics classifier predicted: ${data.prediction}, triggering: ${data.trajectory_type}`);
                     miniGolf.animateShot(data.trajectory_type);
                     
                     // Clear status after a delay

@@ -49,6 +49,49 @@ class RuleBasedSwingClassifier:
         self.classification_rules = {}
         self.is_trained = False
         
+        # Set up default physics-based rules for real-time use
+        self._setup_default_rules()
+    
+    def _setup_default_rules(self):
+        """Set up default physics-based rules without requiring training data."""
+        # Speed classification based on ACCELERATION patterns
+        speed_rules = {
+            'idle': {
+                'acc_std_max': 150,  # Very consistent acceleration (minimal movement)
+                'gyro_mean_max': 600,  # Minimal rotation
+                'priority': 1
+            },
+            'slow': {
+                'acc_std_max': 500,  # Low acceleration variance (smooth, controlled movement)
+                'acc_std_min': 150,  # But more than idle
+                'priority': 2
+            },
+            'medium': {
+                'acc_std_min': 500,   # Moderate acceleration variance
+                'acc_std_max': 3000,  # But not extreme
+                'priority': 3
+            },
+            'fast': {
+                'acc_std_min': 3000,  # High acceleration variance (explosive movement)
+                'priority': 4
+            }
+        }
+        
+        # Direction classification based on ANGULAR VELOCITY (gyroscope)
+        direction_rules = {
+            'direction_axis': 'y',  # Y-axis gyroscope for left/right detection
+            'left_threshold_max': 1800,   # Left swings have gyro_y ≤ 1800
+            'right_threshold_min': 2800,  # Right swings have gyro_y > 2800
+            'min_angular_velocity': 1000  # Minimum rotation to consider directional
+        }
+        
+        self.classification_rules = {
+            'speed': speed_rules,
+            'direction': direction_rules
+        }
+        
+        self.is_trained = True  # Mark as ready for classification
+        
     def extract_features(self, df: pd.DataFrame) -> Dict[str, float]:
         """
         Extract key features from IMU sensor data.
