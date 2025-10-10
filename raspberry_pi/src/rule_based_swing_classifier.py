@@ -81,13 +81,15 @@ class RuleBasedSwingClassifier:
         }
         
         # Direction classification based on ANGULAR VELOCITY (gyroscope)
-        # Adjusted for slower directional swings
+        # Using Z-axis (yaw) for horizontal body rotation detection
         direction_rules = {
-            'direction_axis': 'y',  # Y-axis gyroscope for left/right detection
-            'left_threshold_max': 1800,   # Left swings have gyro_y ≤ 1800
-            'right_threshold_min': 2800,  # Right swings have gyro_y > 2800
-            'min_angular_velocity': 800,  # Reduced threshold for slower directional swings
-            'max_acc_std_for_direction': 3500  # Directional swings typically have lower acc_std
+            'direction_axis': 'z',  # Z-axis gyroscope for left/right detection (horizontal rotation)
+            'left_threshold_max': -1000,   # Left swings have negative gyro_z (< -1000)
+            'right_threshold_min': 2500,   # Right swings have high positive gyro_z (> 2500)
+            'straight_zone_min': -1000,    # Straight swings: -1000 to 2500 (near zero)
+            'straight_zone_max': 2500,
+            'min_angular_velocity': 1000,  # Minimum rotation to consider directional
+            'max_acc_std_for_direction': 4000  # Allow higher acceleration for directional swings
         }
         
         self.classification_rules = {
@@ -358,6 +360,7 @@ class RuleBasedSwingClassifier:
         acc_std = features['acc_std']
         acc_max = features['acc_max']
         acc_mean = features['acc_mean'] 
+        gyro_z = features['gyro_z_mean']  # Changed to Z-axis for horizontal rotation
         gyro_y = features['gyro_y_mean']
         gyro_mean = features['gyro_mean']
         
@@ -386,7 +389,7 @@ class RuleBasedSwingClassifier:
         is_strong_curved_motion = (axis_balance > 0.4 and motion_complexity > 0.08 and rotational_complexity > 0.08)
         
         if direction_class in ['left', 'right'] and direction_conf > 0.7 and is_strong_curved_motion:
-            debug_info['combination_logic'].append(f"Rule 3: Prioritized {direction_class} curved swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
+            debug_info['combination_logic'].append(f"Rule 3: Prioritized {direction_class} curved swing (gyro_z={gyro_z:.0f}, 3D_curve=strong)")
             return direction_class, min(0.95, direction_conf + 0.1)
         
         # Rule 4: EXPLOSIVE FAST SWINGS - High acceleration intensity (after checking for directional)
@@ -397,7 +400,7 @@ class RuleBasedSwingClassifier:
         
         # Rule 5: SECONDARY DIRECTIONAL SWINGS - Lower confidence directional without strong 3D curve
         if direction_class in ['left', 'right'] and direction_conf > 0.6 and acc_std < 3500:
-            debug_info['combination_logic'].append(f"Rule 5: {direction_class} directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
+            debug_info['combination_logic'].append(f"Rule 5: {direction_class} directional swing (gyro_z={gyro_z:.0f}, acc_std={acc_std:.0f})")
             return direction_class, direction_conf
         
         # Rule 6: MEDIUM-FAST SWINGS - Moderate to high acceleration but not explosive
@@ -492,100 +495,76 @@ class RuleBasedSwingClassifier:
         """
         direction_rules = self.classification_rules['direction']
         
-        # Extract traditional directional features
-        gyro_y = features['gyro_y_mean']
+        # Extract Z-axis (yaw) for horizontal body rotation analysis - KEY for left/right detection
+        gyro_z = features['gyro_z_mean']  # Primary axis for horizontal rotation
+        gyro_y = features['gyro_y_mean']  # Secondary for validation  
+        gyro_x = features['gyro_x_mean']  # Additional context
         gyro_magnitude = features['gyro_mean']
         
         # NEW: Extract 3D motion complexity features
         axis_balance = features.get('axis_balance', 0.0)
         motion_complexity = features.get('motion_complexity', 0.0)
-        gyro_axis_balance = features.get('gyro_axis_balance', 0.0)
         rotational_complexity = features.get('rotational_complexity', 0.0)
         
-        debug_info['rule_matches'].append(f"Direction analysis: gyro_y={gyro_y:.1f}, axis_balance={axis_balance:.3f}, motion_complexity={motion_complexity:.3f}")
-        debug_info['rule_matches'].append(f"Rotational analysis: gyro_axis_balance={gyro_axis_balance:.3f}, rotational_complexity={rotational_complexity:.3f}")
+        debug_info['rule_matches'].append(f"Gyro Z-axis (horizontal rotation): {gyro_z:.0f} ← KEY for left/right")
+        debug_info['rule_matches'].append(f"Gyro Y-axis: {gyro_y:.0f}, X-axis: {gyro_x:.0f}")
+        debug_info['rule_matches'].append(f"3D complexity: axis_balance={axis_balance:.3f}, motion_complexity={motion_complexity:.3f}")
         
-        # Check for 3D curved motion signature
-        # Curved swings should have higher 3D complexity than linear swings
-        min_axis_balance = 0.3  # Minimum balance across acceleration axes
-        min_motion_complexity = 0.05  # Minimum 3D motion complexity
-        min_rotational_complexity = 0.05  # Minimum rotational complexity
-        
-        is_curved_motion = (axis_balance > min_axis_balance and 
-                           motion_complexity > min_motion_complexity and
-                           rotational_complexity > min_rotational_complexity)
-        
-        debug_info['rule_matches'].append(f"3D motion analysis: curved_motion={is_curved_motion}")
-        
-        # Check if there's sufficient angular velocity to determine direction
+        # Check if there's sufficient Z-axis angular velocity for horizontal rotation
         min_angular_velocity = direction_rules['min_angular_velocity']
-        if abs(gyro_y) < min_angular_velocity:
-            debug_info['rule_matches'].append(f"Direction: Insufficient angular velocity ({abs(gyro_y):.1f} < {min_angular_velocity})")
+        if abs(gyro_z) < min_angular_velocity:
+            debug_info['rule_matches'].append(f"Direction: Insufficient Z-axis rotation ({abs(gyro_z):.1f} < {min_angular_velocity}) - likely straight swing")
             return 'unknown', 0.0
         
-        # Apply enhanced direction classification with 3D motion analysis
-        left_threshold_max = direction_rules['left_threshold_max']
-        right_threshold_min = direction_rules['right_threshold_min']
+        # Z-axis based direction classification (horizontal body rotation)
+        left_threshold_max = direction_rules['left_threshold_max']      # -1000
+        right_threshold_min = direction_rules['right_threshold_min']    # 2500
         
-        # Enhanced direction detection requiring BOTH directional bias AND curved motion
-        center_zone = (left_threshold_max + right_threshold_min) / 2  # ~2300
+        direction_candidate = 'unknown'
+        base_confidence = 0.0
         
-        if gyro_y <= left_threshold_max:
-            # Left swing detection
-            distance_from_center = abs(gyro_y - center_zone)
-            max_left_distance = abs(left_threshold_max - center_zone)
-            base_confidence = min(0.9, distance_from_center / max_left_distance + 0.4)
+        if gyro_z <= left_threshold_max:
+            # LEFT SWING: Negative Z-axis rotation (counterclockwise when viewed from above)
+            # More negative = stronger left intent
+            distance_from_zero = abs(gyro_z)
+            # Scale confidence: -1000 = 60%, -2000 = 70%, -3000+ = 80%+
+            base_confidence = min(0.9, (distance_from_zero - 1000) / 2000 * 0.3 + 0.6)
+            direction_candidate = 'left'
+            debug_info['rule_matches'].append(f"Direction: LEFT detected - negative Z rotation (gyro_z={gyro_z:.0f})")
             
-            # Boost confidence if 3D curved motion is detected
-            if is_curved_motion:
-                # Strong 3D curved motion supports directional classification
-                curve_boost = min(0.3, (axis_balance + motion_complexity + rotational_complexity) / 3 * 0.3)
-                confidence = min(0.95, base_confidence + curve_boost)
-                debug_info['rule_matches'].append(f"Direction: Left with 3D curve motion (gyro_y={gyro_y:.1f}, curve_boost={curve_boost:.2f})")
-            else:
-                # Weaker confidence without curved motion signature
-                confidence = base_confidence * 0.8
-                debug_info['rule_matches'].append(f"Direction: Left but linear motion (gyro_y={gyro_y:.1f}, reduced confidence)")
+        elif gyro_z >= right_threshold_min:
+            # RIGHT SWING: Positive Z-axis rotation (clockwise when viewed from above)  
+            # More positive = stronger right intent
+            distance_above_threshold = gyro_z - right_threshold_min
+            # Scale confidence: 2500 = 60%, 3000 = 70%, 3500+ = 80%+
+            base_confidence = min(0.9, distance_above_threshold / 1000 * 0.3 + 0.6)
+            direction_candidate = 'right'
+            debug_info['rule_matches'].append(f"Direction: RIGHT detected - positive Z rotation (gyro_z={gyro_z:.0f})")
             
-            if confidence > 0.6:
-                debug_info['rule_matches'].append(f"Direction: LEFT confirmed (conf={confidence:.1%})")
-                return 'left', confidence
-            else:
-                debug_info['rule_matches'].append(f"Direction: Weak left signal (conf={confidence:.1%})")
-                return 'unknown', 0.0
-                
-        elif gyro_y >= right_threshold_min:
-            # Right swing detection
-            distance_from_center = abs(gyro_y - center_zone)
-            max_right_distance = abs(right_threshold_min - center_zone)
-            base_confidence = min(0.9, distance_from_center / max_right_distance + 0.4)
-            
-            # Boost confidence if 3D curved motion is detected
-            if is_curved_motion:
-                # Strong 3D curved motion supports directional classification
-                curve_boost = min(0.3, (axis_balance + motion_complexity + rotational_complexity) / 3 * 0.3)
-                confidence = min(0.95, base_confidence + curve_boost)
-                debug_info['rule_matches'].append(f"Direction: Right with 3D curve motion (gyro_y={gyro_y:.1f}, curve_boost={curve_boost:.2f})")
-            else:
-                # Weaker confidence without curved motion signature
-                confidence = base_confidence * 0.8
-                debug_info['rule_matches'].append(f"Direction: Right but linear motion (gyro_y={gyro_y:.1f}, reduced confidence)")
-            
-            if confidence > 0.6:
-                debug_info['rule_matches'].append(f"Direction: RIGHT confirmed (conf={confidence:.1%})")
-                return 'right', confidence
-            else:
-                debug_info['rule_matches'].append(f"Direction: Weak right signal (conf={confidence:.1%})")
-                return 'unknown', 0.0
-                
         else:
-            # In between thresholds - analyze if it's curved motion without clear direction
-            if is_curved_motion:
-                debug_info['rule_matches'].append(f"Direction: Curved motion detected but unclear direction (gyro_y={gyro_y:.1f})")
-                return 'unknown', 0.3  # Some confidence in non-linear motion
+            # STRAIGHT ZONE: Z-axis between -1000 and 2500 indicates straight swing
+            debug_info['rule_matches'].append(f"Direction: STRAIGHT swing - Z rotation in neutral zone (gyro_z={gyro_z:.0f} between {left_threshold_max} and {right_threshold_min})")
+            return 'unknown', 0.0
+        
+        # Apply confidence boosts and validation
+        if direction_candidate != 'unknown':
+            final_confidence = base_confidence
+            
+            # Optional: Small boost for strong 3D curved motion (but Z-axis is primary)
+            if axis_balance > 0.6 and motion_complexity > 0.1:
+                complexity_boost = min(0.1, (axis_balance + motion_complexity) / 2 * 0.1)
+                final_confidence = min(0.95, final_confidence + complexity_boost)
+                debug_info['rule_matches'].append(f"Direction: 3D curve motion boost (+{complexity_boost:.2f})")
+            
+            # Require minimum confidence for directional classification
+            if final_confidence > 0.55:  # Lower threshold since Z-axis is more reliable
+                debug_info['rule_matches'].append(f"Direction: {direction_candidate.upper()} confirmed (Z-axis={gyro_z:.0f}, conf={final_confidence:.1%})")
+                return direction_candidate, final_confidence
             else:
-                debug_info['rule_matches'].append(f"Direction: Linear center swing (gyro_y={gyro_y:.1f})")
+                debug_info['rule_matches'].append(f"Direction: Weak {direction_candidate} signal (conf={final_confidence:.1%})")
                 return 'unknown', 0.0
+        
+        return 'unknown', 0.0
         
     def evaluate_model(self, data_folder: str) -> Dict[str, Any]:
         """
