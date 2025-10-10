@@ -53,36 +53,41 @@ class RuleBasedSwingClassifier:
         self._setup_default_rules()
     
     def _setup_default_rules(self):
-        """Set up default physics-based rules without requiring training data."""
+        """Set up improved physics-based rules for better idle and directional detection."""
         # Speed classification based on ACCELERATION patterns
         speed_rules = {
             'idle': {
-                'acc_std_max': 150,  # Very consistent acceleration (minimal movement)
-                'gyro_mean_max': 600,  # Minimal rotation
+                'acc_std_max': 200,    # Increased threshold for better idle detection
+                'acc_mean_max': 1000,  # Also check mean acceleration for minimal movement
+                'gyro_mean_max': 800,  # Minimal rotation
                 'priority': 1
             },
             'slow': {
-                'acc_std_max': 500,  # Low acceleration variance (smooth, controlled movement)
-                'acc_std_min': 150,  # But more than idle
+                'acc_std_max': 1000,   # Low acceleration variance (controlled movement)
+                'acc_std_min': 200,    # But more than idle
+                'acc_mean_min': 1000,  # Some actual movement
                 'priority': 2
             },
             'medium': {
-                'acc_std_min': 500,   # Moderate acceleration variance
-                'acc_std_max': 3000,  # But not extreme
+                'acc_std_min': 1000,   # Moderate acceleration variance
+                'acc_std_max': 2000,   # But not high
                 'priority': 3
             },
             'fast': {
-                'acc_std_min': 3000,  # High acceleration variance (explosive movement)
+                'acc_std_min': 2000,   # High acceleration variance
+                'acc_max_min': 10000,  # Also require high peak acceleration
                 'priority': 4
             }
         }
         
         # Direction classification based on ANGULAR VELOCITY (gyroscope)
+        # Adjusted for slower directional swings
         direction_rules = {
             'direction_axis': 'y',  # Y-axis gyroscope for left/right detection
             'left_threshold_max': 1800,   # Left swings have gyro_y ≤ 1800
             'right_threshold_min': 2800,  # Right swings have gyro_y > 2800
-            'min_angular_velocity': 1000  # Minimum rotation to consider directional
+            'min_angular_velocity': 800,  # Reduced threshold for slower directional swings
+            'max_acc_std_for_direction': 3500  # Directional swings typically have lower acc_std
         }
         
         self.classification_rules = {
@@ -304,74 +309,84 @@ class RuleBasedSwingClassifier:
                                direction_result: Tuple[str, float], 
                                debug_info: Dict) -> Tuple[str, float]:
         """
-        Advanced multi-dimensional classification that distinguishes between 
-        fast swings and directional swings using acceleration intensity.
+        Improved multi-dimensional classification with better idle detection and 
+        distinction between fast swings and directional swings.
         
-        Key insight: Fast swings have EXPLOSIVE acceleration patterns (high acc_std + high acc_max)
-        while directional swings have more CONTROLLED movement patterns.
+        Key insights:
+        1. Idle detection should be first priority when movement is minimal
+        2. Fast swings have EXPLOSIVE acceleration intensity (high acc_std + high acc_max)
+        3. Directional swings (left/right) are typically SLOWER with moderate acceleration
         """
         speed_class, speed_conf = speed_result
         direction_class, direction_conf = direction_result
         
-        # Get features for advanced discrimination
+        # Get features for classification logic
         features = debug_info['features']
         acc_std = features['acc_std']
-        acc_max = features['acc_max'] 
+        acc_max = features['acc_max']
+        acc_mean = features['acc_mean'] 
         gyro_y = features['gyro_y_mean']
+        gyro_mean = features['gyro_mean']
         
         debug_info['combination_logic'] = []
         
-        # ADVANCED MULTI-DIMENSIONAL LOGIC
+        # IMPROVED CLASSIFICATION LOGIC
         
-        # Rule 1: Idle takes highest priority (very distinctive pattern)
+        # Rule 1: IDLE - Minimal movement detection (highest priority)
+        # Check for very low acceleration AND low rotation
+        if acc_std < 200 and acc_mean < 1000 and gyro_mean < 800:
+            debug_info['combination_logic'].append(f"Rule 1: Idle - minimal movement (acc_std={acc_std:.0f}, acc_mean={acc_mean:.0f}, gyro_mean={gyro_mean:.0f})")
+            return 'idle', 0.95
+        
+        # Rule 2: ENHANCED IDLE - Secondary idle check for borderline cases
         if speed_class == 'idle' and speed_conf > 0.8:
-            debug_info['combination_logic'].append(f"Rule 1: High-confidence idle detection ({speed_conf:.1%})")
-            return speed_class, speed_conf
+            debug_info['combination_logic'].append(f"Rule 2: High-confidence idle from speed classifier ({speed_conf:.1%})")
+            return 'idle', speed_conf
         
-        # Rule 2: EXPLOSIVE FAST SWINGS - Use acceleration intensity as primary discriminator
-        # Fast swings: High acc_std (>4000) AND high acc_max (>25000) = explosive movement
-        if acc_std > 4000 and acc_max > 25000:
-            debug_info['combination_logic'].append(f"Rule 2: Explosive fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
+        # Rule 3: EXPLOSIVE FAST SWINGS - High acceleration intensity
+        # Fast swings: High acc_std (>3500) AND high acc_max (>20000) = explosive movement
+        if acc_std > 3500 and acc_max > 20000:
+            debug_info['combination_logic'].append(f"Rule 3: Explosive fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
             return 'fast', 0.9
         
-        # Rule 3: CONTROLLED DIRECTIONAL SWINGS - Clear directional intent with moderate intensity
-        # Right swings: Strong directional signal (gyro_y > 2800) but less explosive than fast
-        if direction_class == 'right' and gyro_y > 2800 and acc_std < 4500:
-            debug_info['combination_logic'].append(f"Rule 3: Controlled right swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
-            return 'right', 0.9
+        # Rule 4: DIRECTIONAL SWINGS (LEFT/RIGHT) - Moderate acceleration with clear direction
+        # These swings are typically slower than pure fast swings
+        if direction_class == 'left' and direction_conf > 0.6 and acc_std < 3500:
+            debug_info['combination_logic'].append(f"Rule 4: Left directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
+            return 'left', direction_conf
             
-        # Rule 4: LEFT SWINGS (different pattern - typically lower gyro_y)
-        if direction_class == 'left' and direction_conf > 0.6:
-            debug_info['combination_logic'].append(f"Rule 4: Left directional intent ({direction_conf:.1%})")
-            return direction_class, direction_conf
+        if direction_class == 'right' and direction_conf > 0.6 and acc_std < 3500:
+            debug_info['combination_logic'].append(f"Rule 4: Right directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
+            return 'right', direction_conf
         
-        # Rule 5: MEDIUM-FAST SWINGS (high acceleration but not explosive)
-        if speed_class == 'fast' and acc_std > 3000 and acc_std <= 4000:
-            debug_info['combination_logic'].append(f"Rule 5: Medium-fast swing (acc_std={acc_std:.0f})")
+        # Rule 5: MEDIUM-FAST SWINGS - Moderate to high acceleration but not explosive
+        if acc_std > 2000 and acc_std <= 3500 and acc_max > 10000:
+            debug_info['combination_logic'].append(f"Rule 5: Medium-fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
             return 'fast', 0.8
         
-        # Rule 6: SLOW SWINGS (low acceleration variance)
-        if speed_class == 'slow' and speed_conf > 0.7:
-            debug_info['combination_logic'].append(f"Rule 6: Slow swing detection ({speed_conf:.1%})")
-            return speed_class, speed_conf
+        # Rule 6: SLOW SWINGS - Low acceleration variance but some movement
+        if acc_std > 200 and acc_std <= 1000 and acc_mean > 1000:
+            debug_info['combination_logic'].append(f"Rule 6: Slow swing (acc_std={acc_std:.0f}, acc_mean={acc_mean:.0f})")
+            return 'slow', 0.8
         
-        # Rule 7: MEDIUM/DEFAULT classification
-        if speed_class == 'medium' and speed_conf > 0.6:
-            debug_info['combination_logic'].append(f"Rule 7: Medium swing default ({speed_conf:.1%})")
-            return speed_class, speed_conf
+        # Rule 7: MEDIUM SWINGS - Moderate acceleration
+        if acc_std > 1000 and acc_std <= 2000:
+            debug_info['combination_logic'].append(f"Rule 7: Medium swing (acc_std={acc_std:.0f})")
+            return 'medium', 0.7
         
-        # Rule 8: FALLBACK - Lower confidence directional
+        # Rule 8: FALLBACK - Directional with higher acceleration (possible fast directional)
         if direction_class in ['left', 'right'] and direction_conf > 0.5:
-            debug_info['combination_logic'].append(f"Rule 8: Fallback directional ({direction_class}, {direction_conf:.1%})")
+            debug_info['combination_logic'].append(f"Rule 8: Fallback directional ({direction_class}, conf={direction_conf:.1%}, acc_std={acc_std:.0f})")
             return direction_class, direction_conf
-            
-        # Rule 9: Best effort
-        if speed_conf >= direction_conf:
-            debug_info['combination_logic'].append(f"Rule 9: Best effort - speed ({speed_class}, {speed_conf:.1%})")
+        
+        # Rule 9: FINAL FALLBACK - Use speed classification
+        if speed_conf > 0.5:
+            debug_info['combination_logic'].append(f"Rule 9: Speed fallback ({speed_class}, {speed_conf:.1%})")
             return speed_class, speed_conf
-        else:
-            debug_info['combination_logic'].append(f"Rule 9: Best effort - direction ({direction_class}, {direction_conf:.1%})")
-            return direction_class, direction_conf
+        
+        # Rule 10: ABSOLUTE FALLBACK - Default to medium if nothing else matches
+        debug_info['combination_logic'].append(f"Rule 10: Default medium (no clear pattern detected)")
+        return 'medium', 0.5
         
     def _classify_speed(self, features: Dict[str, float], debug_info: Dict) -> Tuple[str, float]:
         """Classify swing speed based on acceleration variance (physics-based approach)."""
