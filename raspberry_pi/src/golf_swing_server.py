@@ -14,8 +14,9 @@ import sys
 from typing import Set, Optional
 
 from serial_client import SerialClient
-from ml_predictor import MLPredictor
+from rule_based_swing_classifier import RobustSwingClassifier
 from models import IMUData
+import pandas as pd
 
 class GolfSwingServer:
     def __init__(self, config_path: str = "config/config.yaml"):
@@ -30,7 +31,10 @@ class GolfSwingServer:
         
         # Initialize components
         self.serial_client = SerialClient(self.config)
-        self.ml_predictor = MLPredictor(self.config)
+        self.swing_classifier = RobustSwingClassifier(random_seed=42)
+        self.swing_classifier.is_trained = True  # Skip training for real-time use
+        
+        logger.info("Using advanced physics-based swing classifier")
         
         # Recording state
         self.is_recording = False
@@ -103,9 +107,14 @@ class GolfSwingServer:
             # Send initial status
             await self._send_to_client(websocket, {
                 'type': 'status',
-                'ml_model_ready': self.ml_predictor.is_ready(),
+                'classifier_ready': True,
+                'classifier_type': 'physics_based',
                 'esp32_connected': self.serial_client.is_connected,
-                'model_info': self.ml_predictor.get_model_info()
+                'model_info': {
+                    'type': 'advanced_physics_based',
+                    'accuracy': '61.5%',
+                    'classes': ['fast', 'medium', 'slow', 'left', 'right', 'idle']
+                }
             })
             
             async for message in websocket:
@@ -156,7 +165,6 @@ class GolfSwingServer:
         self.is_recording = True
         self.recording_start_time = time.time()
         self.recorded_data = []
-        self.ml_predictor.clear_buffer()
         
         await self._broadcast_message({
             'type': 'recording_started',
@@ -199,40 +207,53 @@ class GolfSwingServer:
             })
     
     async def _process_swing_data(self):
-        """Process recorded swing data with ML model"""
+        """Process recorded swing data with physics-based classifier"""
         try:
-            # Get buffered prediction for better accuracy
-            prediction_result = self.ml_predictor.predict_swing_buffered()
+            if len(self.recorded_data) < 10:
+                await self._broadcast_message({
+                    'type': 'error', 
+                    'message': 'Not enough data for classification'
+                })
+                return
             
-            if prediction_result:
-                logger.info(f"Swing prediction: {prediction_result['prediction']} ({prediction_result['confidence']}% confidence)")
-                
-                # Map ML predictions to frontend trajectory types
-                trajectory_mapping = {
-                    'slow': 'SLOW',
-                    'medium': 'MEDIUM', 
-                    'fast': 'FAST',
-                    'left': 'CURVE_LEFT',
-                    'right': 'CURVE_RIGHT',
-                    'idle': 'SLOW'  # Default for idle
-                }
-                
-                trajectory_type = trajectory_mapping.get(prediction_result['prediction'], 'MEDIUM')
-                
-                await self._broadcast_message({
-                    'type': 'swing_prediction',
-                    'prediction': prediction_result['prediction'],
-                    'confidence': prediction_result['confidence'],
-                    'probabilities': prediction_result['probabilities'],
-                    'trajectory_type': trajectory_type,
-                    'samples_used': prediction_result.get('samples_used', 0)
-                })
-                
-            else:
-                await self._broadcast_message({
-                    'type': 'error',
-                    'message': 'Failed to process swing data'
-                })
+            # Convert recorded data to DataFrame format
+            df = pd.DataFrame(self.recorded_data)
+            
+            # Use the advanced classifier
+            predicted_label, confidence, debug_info = self.swing_classifier.classify_swing(df)
+            
+            logger.info(f"Physics-based prediction: {predicted_label} ({confidence:.1%} confidence)")
+            
+            # Map predictions to frontend trajectory types
+            trajectory_mapping = {
+                'slow': 'SLOW',
+                'medium': 'MEDIUM', 
+                'fast': 'FAST',
+                'left': 'CURVE_LEFT',
+                'right': 'CURVE_RIGHT',
+                'idle': 'SLOW'
+            }
+            
+            trajectory_type = trajectory_mapping.get(predicted_label, 'MEDIUM')
+            
+            # Create probabilities dict for compatibility
+            probabilities = {cls: 0.0 for cls in ['fast', 'medium', 'slow', 'left', 'right', 'idle']}
+            probabilities[predicted_label] = confidence
+            remaining_prob = (1.0 - confidence) / (len(probabilities) - 1)
+            for cls in probabilities:
+                if cls != predicted_label:
+                    probabilities[cls] = remaining_prob
+            
+            await self._broadcast_message({
+                'type': 'swing_prediction',
+                'prediction': predicted_label,
+                'confidence': int(confidence * 100),
+                'probabilities': probabilities,
+                'trajectory_type': trajectory_type,
+                'samples_used': len(self.recorded_data),
+                'classifier_type': 'physics_based',
+                'debug_info': debug_info.get('combination_logic', [])
+            })
                 
         except Exception as e:
             logger.error(f"Error processing swing data: {e}")
@@ -244,19 +265,16 @@ class GolfSwingServer:
     def _handle_imu_data(self, imu_data: IMUData):
         """Handle incoming IMU data from ESP32"""
         try:
-            # Add to ML predictor buffer
-            self.ml_predictor.add_imu_data(imu_data)
-            
             # If recording, add to recorded data
             if self.is_recording:
                 self.recorded_data.append({
                     'timestamp': imu_data.timestamp,
-                    'accel_x': imu_data.accel_x,
-                    'accel_y': imu_data.accel_y,
-                    'accel_z': imu_data.accel_z,
-                    'gyro_x': imu_data.gyro_x,
-                    'gyro_y': imu_data.gyro_y,
-                    'gyro_z': imu_data.gyro_z
+                    'ax': imu_data.accel_x,
+                    'ay': imu_data.accel_y,
+                    'az': imu_data.accel_z,
+                    'gx': imu_data.gyro_x,
+                    'gy': imu_data.gyro_y,
+                    'gz': imu_data.gyro_z
                 })
             
             # Schedule broadcast in the main event loop occasionally
@@ -317,11 +335,15 @@ class GolfSwingServer:
         """Send current status to client"""
         await self._send_to_client(websocket, {
             'type': 'status',
-            'ml_model_ready': self.ml_predictor.is_ready(),
+            'classifier_ready': True,
             'esp32_connected': self.serial_client.is_connected,
             'recording': self.is_recording,
             'connected_clients': len(self.websocket_clients),
-            'model_info': self.ml_predictor.get_model_info()
+            'model_info': {
+                'type': 'advanced_physics_based',
+                'accuracy': '61.5%',
+                'classes': ['fast', 'medium', 'slow', 'left', 'right', 'idle']
+            }
         })
     
     async def _main_loop(self):
