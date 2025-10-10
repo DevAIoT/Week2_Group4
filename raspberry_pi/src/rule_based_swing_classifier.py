@@ -376,64 +376,57 @@ class RuleBasedSwingClassifier:
             debug_info['combination_logic'].append(f"Rule 2: High-confidence idle from speed classifier ({speed_conf:.1%})")
             return 'idle', speed_conf
         
-        # Rule 3: EXPLOSIVE FAST SWINGS - High acceleration intensity
-        # Fast swings: High acc_std (>3500) AND high acc_max (>20000) = explosive movement
-        if acc_std > 3500 and acc_max > 20000:
-            debug_info['combination_logic'].append(f"Rule 3: Explosive fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
-            return 'fast', 0.9
-        
-        # Rule 4: CURVED DIRECTIONAL SWINGS (LEFT/RIGHT) - 3D motion with directional intent
-        # These swings have curved trajectories and are typically different from linear fast swings
+        # Rule 3: CURVED DIRECTIONAL SWINGS FIRST - Prioritize directional intent over speed
+        # Check for strong 3D curved motion signature  
         axis_balance = features.get('axis_balance', 0.0)
         motion_complexity = features.get('motion_complexity', 0.0)
         rotational_complexity = features.get('rotational_complexity', 0.0)
         
-        # Check for strong 3D curved motion signature
+        # Strong 3D curved motion with directional intent should be prioritized
         is_strong_curved_motion = (axis_balance > 0.4 and motion_complexity > 0.08 and rotational_complexity > 0.08)
         
-        if direction_class == 'left' and direction_conf > 0.6:
-            if is_strong_curved_motion:
-                debug_info['combination_logic'].append(f"Rule 4a: Left curved directional swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
-                return 'left', min(0.95, direction_conf + 0.1)  # Boost confidence for strong 3D signature
-            elif acc_std < 3500:  # Traditional moderate acceleration check
-                debug_info['combination_logic'].append(f"Rule 4b: Left directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
-                return 'left', direction_conf
-            
-        if direction_class == 'right' and direction_conf > 0.6:
-            if is_strong_curved_motion:
-                debug_info['combination_logic'].append(f"Rule 4a: Right curved directional swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
-                return 'right', min(0.95, direction_conf + 0.1)  # Boost confidence for strong 3D signature
-            elif acc_std < 3500:  # Traditional moderate acceleration check
-                debug_info['combination_logic'].append(f"Rule 4b: Right directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
-                return 'right', direction_conf
+        if direction_class in ['left', 'right'] and direction_conf > 0.7 and is_strong_curved_motion:
+            debug_info['combination_logic'].append(f"Rule 3: Prioritized {direction_class} curved swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
+            return direction_class, min(0.95, direction_conf + 0.1)
         
-        # Rule 5: MEDIUM-FAST SWINGS - Moderate to high acceleration but not explosive
-        if acc_std > 2000 and acc_std <= 3500 and acc_max > 10000:
-            debug_info['combination_logic'].append(f"Rule 5: Medium-fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
-            return 'fast', 0.8
+        # Rule 4: EXPLOSIVE FAST SWINGS - High acceleration intensity (after checking for directional)
+        # Fast swings: High acc_std (>4000) AND high acc_max (>25000) = truly explosive movement
+        if acc_std > 4000 and acc_max > 25000:
+            debug_info['combination_logic'].append(f"Rule 4: Explosive fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
+            return 'fast', 0.9
         
-        # Rule 6: SLOW SWINGS - Low acceleration variance but some movement
-        if acc_std > 200 and acc_std <= 1000 and acc_mean > 1000:
-            debug_info['combination_logic'].append(f"Rule 6: Slow swing (acc_std={acc_std:.0f}, acc_mean={acc_mean:.0f})")
-            return 'slow', 0.8
-        
-        # Rule 7: MEDIUM SWINGS - Moderate acceleration
-        if acc_std > 1000 and acc_std <= 2000:
-            debug_info['combination_logic'].append(f"Rule 7: Medium swing (acc_std={acc_std:.0f})")
-            return 'medium', 0.7
-        
-        # Rule 8: FALLBACK - Directional with higher acceleration (possible fast directional)
-        if direction_class in ['left', 'right'] and direction_conf > 0.5:
-            debug_info['combination_logic'].append(f"Rule 8: Fallback directional ({direction_class}, conf={direction_conf:.1%}, acc_std={acc_std:.0f})")
+        # Rule 5: SECONDARY DIRECTIONAL SWINGS - Lower confidence directional without strong 3D curve
+        if direction_class in ['left', 'right'] and direction_conf > 0.6 and acc_std < 3500:
+            debug_info['combination_logic'].append(f"Rule 5: {direction_class} directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
             return direction_class, direction_conf
         
-        # Rule 9: FINAL FALLBACK - Use speed classification
+        # Rule 6: MEDIUM-FAST SWINGS - Moderate to high acceleration but not explosive
+        if acc_std > 2000 and acc_std <= 4000 and acc_max > 10000:
+            debug_info['combination_logic'].append(f"Rule 6: Medium-fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
+            return 'fast', 0.8
+        
+        # Rule 7: SLOW SWINGS - Low acceleration variance but some movement  
+        if acc_std > 100 and acc_std <= 600 and acc_mean > 5000:  # Adjusted thresholds
+            debug_info['combination_logic'].append(f"Rule 7: Slow swing (acc_std={acc_std:.0f}, acc_mean={acc_mean:.0f})")
+            return 'slow', 0.8
+        
+        # Rule 8: MEDIUM SWINGS - Moderate acceleration
+        if acc_std > 600 and acc_std <= 2000:
+            debug_info['combination_logic'].append(f"Rule 8: Medium swing (acc_std={acc_std:.0f})")
+            return 'medium', 0.7
+        
+        # Rule 9: FALLBACK - Directional with higher acceleration (possible fast directional)
+        if direction_class in ['left', 'right'] and direction_conf > 0.5:
+            debug_info['combination_logic'].append(f"Rule 9: Fallback directional ({direction_class}, conf={direction_conf:.1%}, acc_std={acc_std:.0f})")
+            return direction_class, direction_conf
+        
+        # Rule 10: FINAL FALLBACK - Use speed classification
         if speed_conf > 0.5:
-            debug_info['combination_logic'].append(f"Rule 9: Speed fallback ({speed_class}, {speed_conf:.1%})")
+            debug_info['combination_logic'].append(f"Rule 10: Speed fallback ({speed_class}, {speed_conf:.1%})")
             return speed_class, speed_conf
         
-        # Rule 10: ABSOLUTE FALLBACK - Default to medium if nothing else matches
-        debug_info['combination_logic'].append(f"Rule 10: Default medium (no clear pattern detected)")
+        # Rule 11: ABSOLUTE FALLBACK - Default to medium if nothing else matches
+        debug_info['combination_logic'].append(f"Rule 11: Default medium (no clear pattern detected)")
         return 'medium', 0.5
         
     def _classify_speed(self, features: Dict[str, float], debug_info: Dict) -> Tuple[str, float]:
