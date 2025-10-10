@@ -99,7 +99,7 @@ class RuleBasedSwingClassifier:
         
     def extract_features(self, df: pd.DataFrame) -> Dict[str, float]:
         """
-        Extract key features from IMU sensor data.
+        Extract key features from IMU sensor data including 3D motion complexity analysis.
         
         Args:
             df: DataFrame with columns [timestamp, ax, ay, az, gx, gy, gz, label]
@@ -117,6 +117,25 @@ class RuleBasedSwingClassifier:
         timestamps = pd.to_datetime(df['timestamp'])
         duration = (timestamps.iloc[-1] - timestamps.iloc[0]).total_seconds()
         
+        # NEW: 3D Motion Complexity Analysis for Curved vs Linear Trajectory Detection
+        # Analyze acceleration distribution across axes
+        ax_std, ay_std, az_std = df['ax'].std(), df['ay'].std(), df['az'].std()
+        total_acc_std = ax_std + ay_std + az_std
+        
+        # Calculate axis balance (for 3D curved motion, movement should be more balanced across axes)
+        axis_balance = 1.0 - abs(max(ax_std, ay_std, az_std) - min(ax_std, ay_std, az_std)) / (total_acc_std + 1e-8)
+        
+        # 3D motion complexity - higher for curved trajectories
+        motion_complexity = (ax_std * ay_std * az_std) / ((ax_std + ay_std + az_std + 1e-8) ** 2) * 27
+        
+        # Gyroscope 3D analysis
+        gx_std, gy_std, gz_std = df['gx'].std(), df['gy'].std(), df['gz'].std()
+        total_gyro_std = gx_std + gy_std + gz_std
+        
+        # Rotational complexity (curved swings have more complex rotation patterns)
+        gyro_axis_balance = 1.0 - abs(max(gx_std, gy_std, gz_std) - min(gx_std, gy_std, gz_std)) / (total_gyro_std + 1e-8)
+        rotational_complexity = (gx_std * gy_std * gz_std) / ((gx_std + gy_std + gz_std + 1e-8) ** 2) * 27
+        
         features = {
             # Acceleration-based features
             'acc_mean': acc_magnitude.mean(),
@@ -132,13 +151,27 @@ class RuleBasedSwingClassifier:
             'gyro_std': gyro_magnitude.std(),
             'gyro_range': gyro_magnitude.max() - gyro_magnitude.min(),
             
-            # Directional features (key for left/right classification)
+            # Individual axis features (key for directional classification)
             'gyro_x_mean': df['gx'].mean(),
             'gyro_y_mean': df['gy'].mean(), 
             'gyro_z_mean': df['gz'].mean(),
+            'gyro_x_std': gx_std,
+            'gyro_y_std': gy_std,
+            'gyro_z_std': gz_std,
             'gyro_x_bias': df['gx'].mean() / (df['gx'].std() + 1e-8),  # Avoid division by zero
             'gyro_y_bias': df['gy'].mean() / (df['gy'].std() + 1e-8),
             'gyro_z_bias': df['gz'].mean() / (df['gz'].std() + 1e-8),
+            
+            # NEW: 3D Motion Complexity Features for Curved Trajectory Detection
+            'axis_balance': axis_balance,  # Higher for 3D curved motion (0-1)
+            'motion_complexity': motion_complexity,  # Higher for balanced 3D movement
+            'gyro_axis_balance': gyro_axis_balance,  # Rotational balance across axes
+            'rotational_complexity': rotational_complexity,  # Complex rotation patterns
+            
+            # Individual acceleration axis std (for trajectory analysis)
+            'acc_x_std': ax_std,
+            'acc_y_std': ay_std,
+            'acc_z_std': az_std,
             
             # Temporal features
             'duration': duration,
@@ -349,15 +382,30 @@ class RuleBasedSwingClassifier:
             debug_info['combination_logic'].append(f"Rule 3: Explosive fast swing (acc_std={acc_std:.0f}, acc_max={acc_max:.0f})")
             return 'fast', 0.9
         
-        # Rule 4: DIRECTIONAL SWINGS (LEFT/RIGHT) - Moderate acceleration with clear direction
-        # These swings are typically slower than pure fast swings
-        if direction_class == 'left' and direction_conf > 0.6 and acc_std < 3500:
-            debug_info['combination_logic'].append(f"Rule 4: Left directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
-            return 'left', direction_conf
+        # Rule 4: CURVED DIRECTIONAL SWINGS (LEFT/RIGHT) - 3D motion with directional intent
+        # These swings have curved trajectories and are typically different from linear fast swings
+        axis_balance = features.get('axis_balance', 0.0)
+        motion_complexity = features.get('motion_complexity', 0.0)
+        rotational_complexity = features.get('rotational_complexity', 0.0)
+        
+        # Check for strong 3D curved motion signature
+        is_strong_curved_motion = (axis_balance > 0.4 and motion_complexity > 0.08 and rotational_complexity > 0.08)
+        
+        if direction_class == 'left' and direction_conf > 0.6:
+            if is_strong_curved_motion:
+                debug_info['combination_logic'].append(f"Rule 4a: Left curved directional swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
+                return 'left', min(0.95, direction_conf + 0.1)  # Boost confidence for strong 3D signature
+            elif acc_std < 3500:  # Traditional moderate acceleration check
+                debug_info['combination_logic'].append(f"Rule 4b: Left directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
+                return 'left', direction_conf
             
-        if direction_class == 'right' and direction_conf > 0.6 and acc_std < 3500:
-            debug_info['combination_logic'].append(f"Rule 4: Right directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
-            return 'right', direction_conf
+        if direction_class == 'right' and direction_conf > 0.6:
+            if is_strong_curved_motion:
+                debug_info['combination_logic'].append(f"Rule 4a: Right curved directional swing (gyro_y={gyro_y:.0f}, 3D_curve=strong)")
+                return 'right', min(0.95, direction_conf + 0.1)  # Boost confidence for strong 3D signature
+            elif acc_std < 3500:  # Traditional moderate acceleration check
+                debug_info['combination_logic'].append(f"Rule 4b: Right directional swing (gyro_y={gyro_y:.0f}, acc_std={acc_std:.0f})")
+                return 'right', direction_conf
         
         # Rule 5: MEDIUM-FAST SWINGS - Moderate to high acceleration but not explosive
         if acc_std > 2000 and acc_std <= 3500 and acc_max > 10000:
@@ -440,14 +488,41 @@ class RuleBasedSwingClassifier:
             return 'fast', 0.6
         
     def _classify_direction(self, features: Dict[str, float], debug_info: Dict) -> Tuple[str, float]:
-        """Classify swing direction based on Y-axis angular velocity (physics-based approach).""" 
+        """
+        Classify swing direction using 3D motion complexity analysis for curved trajectories.
+        
+        Key insight: Curved left/right swings have:
+        1. 3D motion across all axes (higher axis_balance and motion_complexity)
+        2. Complex rotational patterns (higher rotational_complexity)
+        3. Directional bias in gyroscope readings
+        4. Different motion signatures than linear fast/slow swings
+        """
         direction_rules = self.classification_rules['direction']
         
-        # Focus on Y-axis gyroscope for left/right detection
+        # Extract traditional directional features
         gyro_y = features['gyro_y_mean']
         gyro_magnitude = features['gyro_mean']
         
-        debug_info['rule_matches'].append(f"Direction analysis: gyro_y_mean={gyro_y:.1f}, gyro_magnitude={gyro_magnitude:.1f}")
+        # NEW: Extract 3D motion complexity features
+        axis_balance = features.get('axis_balance', 0.0)
+        motion_complexity = features.get('motion_complexity', 0.0)
+        gyro_axis_balance = features.get('gyro_axis_balance', 0.0)
+        rotational_complexity = features.get('rotational_complexity', 0.0)
+        
+        debug_info['rule_matches'].append(f"Direction analysis: gyro_y={gyro_y:.1f}, axis_balance={axis_balance:.3f}, motion_complexity={motion_complexity:.3f}")
+        debug_info['rule_matches'].append(f"Rotational analysis: gyro_axis_balance={gyro_axis_balance:.3f}, rotational_complexity={rotational_complexity:.3f}")
+        
+        # Check for 3D curved motion signature
+        # Curved swings should have higher 3D complexity than linear swings
+        min_axis_balance = 0.3  # Minimum balance across acceleration axes
+        min_motion_complexity = 0.05  # Minimum 3D motion complexity
+        min_rotational_complexity = 0.05  # Minimum rotational complexity
+        
+        is_curved_motion = (axis_balance > min_axis_balance and 
+                           motion_complexity > min_motion_complexity and
+                           rotational_complexity > min_rotational_complexity)
+        
+        debug_info['rule_matches'].append(f"3D motion analysis: curved_motion={is_curved_motion}")
         
         # Check if there's sufficient angular velocity to determine direction
         min_angular_velocity = direction_rules['min_angular_velocity']
@@ -455,50 +530,69 @@ class RuleBasedSwingClassifier:
             debug_info['rule_matches'].append(f"Direction: Insufficient angular velocity ({abs(gyro_y):.1f} < {min_angular_velocity})")
             return 'unknown', 0.0
         
-        # Apply physics-based direction classification with improved logic
+        # Apply enhanced direction classification with 3D motion analysis
         left_threshold_max = direction_rules['left_threshold_max']
         right_threshold_min = direction_rules['right_threshold_min']
         
-        # Enhanced direction detection: require CLEAR directional bias
-        # For a swing to be classified as directional, it should have:
-        # 1. Strong Y-axis bias (beyond thresholds)
-        # 2. Reasonable confidence based on distance from center
-        
-        center_zone = (left_threshold_max + right_threshold_min) / 2  # ~2000
+        # Enhanced direction detection requiring BOTH directional bias AND curved motion
+        center_zone = (left_threshold_max + right_threshold_min) / 2  # ~2300
         
         if gyro_y <= left_threshold_max:
-            # Left swing: Lower Y-axis gyroscope values
-            # Confidence based on how far from center zone
+            # Left swing detection
             distance_from_center = abs(gyro_y - center_zone)
             max_left_distance = abs(left_threshold_max - center_zone)
-            confidence = min(0.9, distance_from_center / max_left_distance + 0.5)
+            base_confidence = min(0.9, distance_from_center / max_left_distance + 0.4)
             
-            # Require minimum confidence for clear directional intent
+            # Boost confidence if 3D curved motion is detected
+            if is_curved_motion:
+                # Strong 3D curved motion supports directional classification
+                curve_boost = min(0.3, (axis_balance + motion_complexity + rotational_complexity) / 3 * 0.3)
+                confidence = min(0.95, base_confidence + curve_boost)
+                debug_info['rule_matches'].append(f"Direction: Left with 3D curve motion (gyro_y={gyro_y:.1f}, curve_boost={curve_boost:.2f})")
+            else:
+                # Weaker confidence without curved motion signature
+                confidence = base_confidence * 0.8
+                debug_info['rule_matches'].append(f"Direction: Left but linear motion (gyro_y={gyro_y:.1f}, reduced confidence)")
+            
             if confidence > 0.6:
-                debug_info['rule_matches'].append(f"Direction: Left detected (gyro_y {gyro_y:.1f} <= {left_threshold_max}, conf={confidence:.1%})")
+                debug_info['rule_matches'].append(f"Direction: LEFT confirmed (conf={confidence:.1%})")
                 return 'left', confidence
             else:
-                debug_info['rule_matches'].append(f"Direction: Weak left signal (gyro_y {gyro_y:.1f}, conf={confidence:.1%})")
+                debug_info['rule_matches'].append(f"Direction: Weak left signal (conf={confidence:.1%})")
                 return 'unknown', 0.0
-            
+                
         elif gyro_y >= right_threshold_min:
-            # Right swing: Higher Y-axis gyroscope values
+            # Right swing detection
             distance_from_center = abs(gyro_y - center_zone)
             max_right_distance = abs(right_threshold_min - center_zone)
-            confidence = min(0.9, distance_from_center / max_right_distance + 0.5)
+            base_confidence = min(0.9, distance_from_center / max_right_distance + 0.4)
             
-            # Require minimum confidence for clear directional intent
+            # Boost confidence if 3D curved motion is detected
+            if is_curved_motion:
+                # Strong 3D curved motion supports directional classification
+                curve_boost = min(0.3, (axis_balance + motion_complexity + rotational_complexity) / 3 * 0.3)
+                confidence = min(0.95, base_confidence + curve_boost)
+                debug_info['rule_matches'].append(f"Direction: Right with 3D curve motion (gyro_y={gyro_y:.1f}, curve_boost={curve_boost:.2f})")
+            else:
+                # Weaker confidence without curved motion signature
+                confidence = base_confidence * 0.8
+                debug_info['rule_matches'].append(f"Direction: Right but linear motion (gyro_y={gyro_y:.1f}, reduced confidence)")
+            
             if confidence > 0.6:
-                debug_info['rule_matches'].append(f"Direction: Right detected (gyro_y {gyro_y:.1f} >= {right_threshold_min}, conf={confidence:.1%})")
+                debug_info['rule_matches'].append(f"Direction: RIGHT confirmed (conf={confidence:.1%})")
                 return 'right', confidence
             else:
-                debug_info['rule_matches'].append(f"Direction: Weak right signal (gyro_y {gyro_y:.1f}, conf={confidence:.1%})")
+                debug_info['rule_matches'].append(f"Direction: Weak right signal (conf={confidence:.1%})")
                 return 'unknown', 0.0
-            
+                
         else:
-            # In between thresholds - center/ambiguous direction
-            debug_info['rule_matches'].append(f"Direction: Center swing (gyro_y {gyro_y:.1f} between {left_threshold_max} and {right_threshold_min})")
-            return 'unknown', 0.0
+            # In between thresholds - analyze if it's curved motion without clear direction
+            if is_curved_motion:
+                debug_info['rule_matches'].append(f"Direction: Curved motion detected but unclear direction (gyro_y={gyro_y:.1f})")
+                return 'unknown', 0.3  # Some confidence in non-linear motion
+            else:
+                debug_info['rule_matches'].append(f"Direction: Linear center swing (gyro_y={gyro_y:.1f})")
+                return 'unknown', 0.0
         
     def evaluate_model(self, data_folder: str) -> Dict[str, Any]:
         """
