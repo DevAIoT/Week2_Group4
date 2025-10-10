@@ -1602,10 +1602,10 @@
             }
             
             handleStatusUpdate(data) {
-                if (data.ml_model_ready) {
-                    this.updateStatus('modelStatus', '🤖 ML model ready', '#32cd32');
+                if (data.classifier_ready) {
+                    this.updateStatus('modelStatus', '⚡ Physics classifier ready', '#32cd32');
                 } else {
-                    this.updateStatus('modelStatus', '🤖 ML model not ready', '#ff4444');
+                    this.updateStatus('modelStatus', '⚡ Physics classifier not ready', '#ff4444');
                 }
                 
                 if (data.esp32_connected) {
@@ -1615,7 +1615,7 @@
                 }
                 
                 // Update swing button state
-                this.updateSwingButton(data.ml_model_ready && data.esp32_connected);
+                this.updateSwingButton(data.classifier_ready && data.esp32_connected);
             }
             
             handleRecordingStarted(data) {
