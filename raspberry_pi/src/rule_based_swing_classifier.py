@@ -82,13 +82,16 @@ class RuleBasedSwingClassifier:
         
         # Direction classification based on ANGULAR VELOCITY (gyroscope)
         # Using Z-axis (yaw) for horizontal body rotation detection
+        # Thresholds based on real data analysis:
+        # LEFT swings: -2905 to -993 (avg: -1663)  
+        # RIGHT swings: 3191 to 4328 (avg: 3710)
         direction_rules = {
             'direction_axis': 'z',  # Z-axis gyroscope for left/right detection (horizontal rotation)
-            'left_threshold_max': -1000,   # Left swings have negative gyro_z (< -1000)
-            'right_threshold_min': 2500,   # Right swings have high positive gyro_z (> 2500)
-            'straight_zone_min': -1000,    # Straight swings: -1000 to 2500 (near zero)
-            'straight_zone_max': 2500,
-            'min_angular_velocity': 1000,  # Minimum rotation to consider directional
+            'left_threshold_max': -800,    # LEFT: < -800 (more sensitive, captures -993 and stronger)
+            'right_threshold_min': 2800,   # RIGHT: > 2800 (more sensitive, captures 3191 and stronger)
+            'straight_zone_min': -800,     # STRAIGHT: -800 to 2800 (neutral zone)
+            'straight_zone_max': 2800,
+            'min_angular_velocity': 600,   # Reduced minimum rotation threshold 
             'max_acc_std_for_direction': 4000  # Allow higher acceleration for directional swings
         }
         
@@ -517,8 +520,8 @@ class RuleBasedSwingClassifier:
             return 'unknown', 0.0
         
         # Z-axis based direction classification (horizontal body rotation)
-        left_threshold_max = direction_rules['left_threshold_max']      # -1000
-        right_threshold_min = direction_rules['right_threshold_min']    # 2500
+        left_threshold_max = direction_rules['left_threshold_max']      # -800
+        right_threshold_min = direction_rules['right_threshold_min']    # 2800
         
         direction_candidate = 'unknown'
         base_confidence = 0.0
@@ -527,8 +530,8 @@ class RuleBasedSwingClassifier:
             # LEFT SWING: Negative Z-axis rotation (counterclockwise when viewed from above)
             # More negative = stronger left intent
             distance_from_zero = abs(gyro_z)
-            # Scale confidence: -1000 = 60%, -2000 = 70%, -3000+ = 80%+
-            base_confidence = min(0.9, (distance_from_zero - 1000) / 2000 * 0.3 + 0.6)
+            # Scale confidence: -800 = 60%, -1500 = 75%, -2500+ = 85%+
+            base_confidence = min(0.9, (distance_from_zero - 800) / 1700 * 0.25 + 0.6)
             direction_candidate = 'left'
             debug_info['rule_matches'].append(f"Direction: LEFT detected - negative Z rotation (gyro_z={gyro_z:.0f})")
             
@@ -536,13 +539,13 @@ class RuleBasedSwingClassifier:
             # RIGHT SWING: Positive Z-axis rotation (clockwise when viewed from above)  
             # More positive = stronger right intent
             distance_above_threshold = gyro_z - right_threshold_min
-            # Scale confidence: 2500 = 60%, 3000 = 70%, 3500+ = 80%+
-            base_confidence = min(0.9, distance_above_threshold / 1000 * 0.3 + 0.6)
+            # Scale confidence: 2800 = 60%, 3500 = 75%, 4200+ = 85%+
+            base_confidence = min(0.9, distance_above_threshold / 1400 * 0.25 + 0.6)
             direction_candidate = 'right'
             debug_info['rule_matches'].append(f"Direction: RIGHT detected - positive Z rotation (gyro_z={gyro_z:.0f})")
             
         else:
-            # STRAIGHT ZONE: Z-axis between -1000 and 2500 indicates straight swing
+            # STRAIGHT ZONE: Z-axis between -800 and 2800 indicates straight swing
             debug_info['rule_matches'].append(f"Direction: STRAIGHT swing - Z rotation in neutral zone (gyro_z={gyro_z:.0f} between {left_threshold_max} and {right_threshold_min})")
             return 'unknown', 0.0
         
