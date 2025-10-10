@@ -14,7 +14,7 @@ import sys
 from typing import Set, Optional
 
 from serial_client import SerialClient
-from rule_based_swing_classifier import RobustSwingClassifier
+from rule_based_swing_classifier import RuleBasedSwingClassifier
 from models import IMUData
 import pandas as pd
 
@@ -31,7 +31,7 @@ class GolfSwingServer:
         
         # Initialize components
         self.serial_client = SerialClient(self.config)
-        self.swing_classifier = RobustSwingClassifier(random_seed=42)
+        self.swing_classifier = RuleBasedSwingClassifier()
         self.swing_classifier.is_trained = True  # Skip training for real-time use
         
         logger.info("Using advanced physics-based swing classifier")

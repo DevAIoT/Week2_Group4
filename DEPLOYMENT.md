@@ -48,8 +48,8 @@ sudo apt install -y python3-venv
 ### 2. Create Virtual Environment for Small Packages
 
 ```bash
-# Create virtual environment for lightweight dependencies
-python3 -m venv ~/golf_env
+# Create virtual environment with access to system packages
+python3 -m venv ~/golf_env --system-site-packages
 
 # Activate environment
 source ~/golf_env/bin/activate
