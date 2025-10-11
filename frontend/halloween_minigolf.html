@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎃 Halloween Mini Golf - First Person</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(180deg, #1a0f2e 0%, #2d1b69 50%, #0f0f0f 100%);
+            font-family: 'Creepster', 'Arial Black', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&display=swap');
+
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ff6b35;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 100;
+        }
+
+        .distance-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff6b35;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ff6b35;
+            font-size: 16px;
+            text-align: center;
+            min-width: 150px;
+        }
+
+        .controls {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 100;
+        }
+
+        .swing-controls {
+            position: absolute;
+            top: 20px;
+            right: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .swing-button {
+            padding: 15px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            border: 3px solid #32cd32;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #32cd32;
+            background: rgba(0, 0, 0, 0.8);
+            text-transform: uppercase;
+            font-family: 'Creepster', Arial;
+            min-width: 150px;
+        }
+
+        .swing-button:hover {
+            background: #32cd32;
+            color: #000;
+            box-shadow: 0 0 20px #32cd32;
+        }
+
+        .swing-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .recording {
+            background: #ff4444 !important;
+            border-color: #ff4444 !important;
+            color: white !important;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .status-display {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff6b35;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ff6b35;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 2px solid #ff6b35;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #ff6b35;
+            background: rgba(0, 0, 0, 0.8);
+            text-transform: uppercase;
+            font-family: 'Creepster', Arial;
+            min-width: 120px;
+        }
+
+        button:hover {
+            background: #ff6b35;
+            color: #000;
+            box-shadow: 0 0 20px #ff6b35;
+        }
+
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30px;
+            height: 30px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: #ff6b35;
+            box-shadow: 0 0 10px #ff6b35;
+        }
+
+        .crosshair::before {
+            width: 2px;
+            height: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .crosshair::after {
+            height: 2px;
+            width: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="miniGolfCanvas"></canvas>
+        
+        <div class="hud">
+            🎃 Halloween Mini Golf
+            <br>Hole: 1 | Par: <span id="parValue">3</span>
+        </div>
+        
+        <div class="distance-display">
+            <div>🕳️ Distance to Hole</div>
+            <div id="distanceValue" style="font-size: 24px; margin-top: 5px;">25.0m</div>
+        </div>
+        
+        <div class="crosshair"></div>
+        
+        <div class="swing-controls">
+            <button id="swingButton" class="swing-button" onclick="startSwingRecording()">🏌️ Swing!</button>
+            <div id="swingStatus" style="color: #32cd32; font-size: 14px; text-align: center;"></div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="takeShot('SLOW')">Gentle</button>
+            <button onclick="takeShot('MEDIUM')">Normal</button>
+            <button onclick="takeShot('FAST')">Power</button>
+            <button onclick="takeShot('CURVE_LEFT')">Curve Left</button>
+            <button onclick="takeShot('CURVE_RIGHT')">Curve Right</button>
+        </div>
+        
+        <div class="status-display" id="statusDisplay">
+            <div id="connectionStatus">🔗 Connecting to server...</div>
+            <div id="modelStatus">🤖 Loading ML model...</div>
+            <div id="esp32Status">📡 Connecting to ESP32...</div>
+        </div>
+    </div>
+
+    <script>
+        class HalloweenMiniGolf {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.resizeCanvas();
+                
+                // Game state
+                this.isAnimating = false;
+                this.startX = this.canvas.width / 2;
+                this.startY = this.canvas.height - 50; // Starting position
+                this.ballX = this.startX;
+                this.ballY = this.startY;
+                this.holeX = this.canvas.width / 2;
+                this.holeY = this.canvas.height * 0.35; // Near end of green portion
+                
+                // Fixed distance system (30m total distance represented)
+                this.metersToPixels = (this.startY - this.holeY) / 30; // 30m total distance
+                this.distanceToHole = 30.0; // Starting distance in meters
+                
+                // Golfer position (follows the ball)
+                this.golferX = this.ballX;
+                this.golferY = this.ballY;
+                
+                // Water moat bounds - reduced height to just above hole area
+                const holeAreaTop = this.holeY - 20; // Just above the hole
+                const courseHeight = this.startY - holeAreaTop; // From start to just above hole
+                
+                this.courseBounds = {
+                    width: 40 * this.metersToPixels,
+                    height: courseHeight,
+                    centerX: this.canvas.width / 2,
+                    centerY: holeAreaTop + courseHeight / 2,
+                    moatWidth: 2 * this.metersToPixels // 2m wide moat
+                };
+                
+                // Game stats
+                this.par = 3;
+                this.currentPar = this.par;
+                this.previousBallX = this.ballX;
+                this.previousBallY = this.ballY;
+                
+                // Animation properties
+                this.trail = [];
+                this.maxTrailLength = 25; // Longer trail
+                this.animationFrame = 0;
+                this.golferArmAngle = 0;
+                
+                // Halloween elements
+                this.pumpkins = this.generatePumpkins();
+                this.ghosts = this.generateGhosts();
+                this.bats = this.generateBats();
+                this.clouds = this.generateClouds();
+                this.houses = this.generateHouses();
+                
+                // Start animations
+                this.startAmbientAnimations();
+                this.draw();
+                
+                // Add throttled resize handler
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => this.resizeCanvas(), 100);
+                });
+            }
+
+            resizeCanvas() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                // Recalculate all dynamic positions after resize
+                this.updateDynamicPositions();
+            }
+
+            updateDynamicPositions() {
+                // Update starting position (bottom center)
+                this.startX = this.canvas.width / 2;
+                this.startY = this.canvas.height - 50;
+                
+                // Update hole position (25% from top in grass area)
+                this.holeX = this.canvas.width / 2;
+                this.holeY = this.canvas.height * 0.25 + (this.canvas.height * 0.75) * 0.2; // 20% into grass area
+                
+                // Recalculate distance conversion
+                this.metersToPixels = (this.startY - this.holeY) / 30; // 30m total distance
+                
+                // Update course bounds for moat - top aligns with start of grass area
+                const grassStartY = this.canvas.height * 0.25; // Where grass begins (25% down)
+                const moatWidth = 2 * this.metersToPixels;
+                const courseHeight = this.startY - grassStartY - moatWidth; // Account for moat width
+                
+                // Calculate centerY so that courseY - moatWidth = grassStartY
+                // courseY = centerY - height/2, so centerY - height/2 - moatWidth = grassStartY
+                // centerY = grassStartY + moatWidth + height/2
+                
+                this.courseBounds = {
+                    width: 40 * this.metersToPixels,
+                    height: courseHeight,
+                    centerX: this.canvas.width / 2,
+                    centerY: grassStartY + moatWidth + courseHeight / 2,
+                    moatWidth: moatWidth
+                };
+                
+                // Update ball position if it's at start
+                if (!this.isAnimating) {
+                    this.ballX = this.startX;
+                    this.ballY = this.startY;
+                    this.golferX = this.startX;
+                    this.golferY = this.startY;
+                }
+                
+                // Regenerate all elements with new positions
+                this.regenerateElements();
+            }
+
+            regenerateElements() {
+                // Regenerate clouds with new canvas dimensions
+                this.clouds = this.generateClouds();
+                
+                // Regenerate houses with new course bounds
+                this.houses = this.generateHouses();
+                
+                // Regenerate ghosts in new sky area
+                this.ghosts = this.generateGhosts();
+                
+                // Regenerate bats in new sky area
+                this.bats = this.generateBats();
+                
+                // Keep pumpkins as they're relative to course
+                this.pumpkins = this.generatePumpkins();
+            }
+
+            generatePumpkins() {
+                const pumpkins = [];
+                const grassTop = this.canvas.height * 0.25;
+                
+                // Get course and moat boundaries to avoid overlaps
+                const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
+                const courseY = this.courseBounds.centerY - this.courseBounds.height / 2;
+                const courseWidth = this.courseBounds.width;
+                const courseHeight = this.courseBounds.height;
+                const moatWidth = this.courseBounds.moatWidth;
+                
+                // Double the number of pumpkins (8 instead of 4)
+                for (let i = 0; i < 8; i++) {
+                    let pumpkinX, pumpkinY;
+                    let attempts = 0;
+                    
+                    // Try to place pumpkin away from course and moat
+                    do {
+                        // Place on left or right side of the course
+                        const onLeftSide = i % 2 === 0;
+                        if (onLeftSide) {
+                            pumpkinX = 50 + Math.random() * (courseX - moatWidth - 100);
+                        } else {
+                            pumpkinX = courseX + courseWidth + moatWidth + 50 + Math.random() * (this.canvas.width - courseX - courseWidth - moatWidth - 100);
+                        }
+                        
+                        pumpkinY = grassTop + 50 + Math.random() * (this.canvas.height - grassTop - 100);
+                        attempts++;
+                    } while (attempts < 10 && this.isInCourseArea(pumpkinX, pumpkinY, courseX, courseY, courseWidth, courseHeight, moatWidth));
+                    
+                    pumpkins.push({
+                        x: Math.max(50, Math.min(this.canvas.width - 50, pumpkinX)),
+                        y: Math.max(grassTop + 50, Math.min(this.canvas.height - 50, pumpkinY)),
+                        size: 15 + Math.random() * 20,
+                        glowPhase: Math.random() * Math.PI * 2
+                    });
+                }
+                return pumpkins;
+            }
+
+            isInCourseArea(x, y, courseX, courseY, courseWidth, courseHeight, moatWidth) {
+                // Check if position is in course or moat area
+                const buffer = 30; // Extra space around course/moat
+                return (x > courseX - moatWidth - buffer && 
+                        x < courseX + courseWidth + moatWidth + buffer &&
+                        y > courseY - moatWidth - buffer && 
+                        y < courseY + courseHeight + buffer);
+            }
+
+            generateGhosts() {
+                const ghosts = [];
+                const skyHeight = this.canvas.height * 0.25; // Updated to 25%
+                for (let i = 0; i < 4; i++) {
+                    ghosts.push({
+                        x: Math.random() * this.canvas.width,
+                        y: 50 + Math.random() * (skyHeight - 100), // Only in sky region
+                        floatOffset: Math.random() * Math.PI * 2,
+                        speed: 0.02 + Math.random() * 0.01
+                    });
+                }
+                return ghosts;
+            }
+
+            generateBats() {
+                const bats = [];
+                const skyHeight = this.canvas.height * 0.25; // Updated to 25%
+                for (let i = 0; i < 8; i++) {
+                    bats.push({
+                        x: Math.random() * this.canvas.width,
+                        y: 20 + Math.random() * (skyHeight - 40), // Only in sky region
+                        speed: 1 + Math.random() * 2,
+                        direction: Math.random() * Math.PI * 2,
+                        wingPhase: Math.random() * Math.PI * 2
+                    });
+                }
+                return bats;
+            }
+
+            generateClouds() {
+                const clouds = [];
+                const skyHeight = this.canvas.height * 0.25; // Updated to 25%
+                
+                // Create cloud clusters with overlapping oval shapes
+                const numClusters = 3;
+                for (let cluster = 0; cluster < numClusters; cluster++) {
+                    const clusterX = (cluster + 1) * (this.canvas.width / (numClusters + 1));
+                    const clusterY = 40 + Math.random() * (skyHeight - 80);
+                    
+                    // 4-6 overlapping clouds per cluster
+                    const cloudsInCluster = 4 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < cloudsInCluster; i++) {
+                        clouds.push({
+                            x: clusterX + (Math.random() - 0.5) * 150, // Closer together for overlap
+                            y: clusterY + (Math.random() - 0.5) * 40,
+                            width: 60 + Math.random() * 80, // Oval width
+                            height: 25 + Math.random() * 35, // Oval height
+                            opacity: 0.25 + Math.random() * 0.35,
+                            driftSpeed: 0.02 + Math.random() * 0.06, // Much slower
+                            layer: Math.floor(Math.random() * 3) // For layering effect
+                        });
+                    }
+                }
+                
+                // Add some individual oval clouds
+                for (let i = 0; i < 6; i++) {
+                    clouds.push({
+                        x: Math.random() * this.canvas.width,
+                        y: 30 + Math.random() * (skyHeight - 60),
+                        width: 50 + Math.random() * 70,
+                        height: 20 + Math.random() * 30,
+                        opacity: 0.2 + Math.random() * 0.3,
+                        driftSpeed: 0.01 + Math.random() * 0.04, // Slower movement
+                        layer: Math.floor(Math.random() * 3)
+                    });
+                }
+                
+                return clouds;
+            }
+
+            generateHouses() {
+                const houses = [];
+                const grassTop = this.canvas.height * 0.25; // Updated to 25%
+                const grassBottom = this.canvas.height;
+                
+                // Calculate water/course boundary to avoid placing houses there
+                const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
+                const courseY = this.courseBounds.centerY - this.courseBounds.height / 2;
+                const courseWidth = this.courseBounds.width;
+                const courseHeight = this.courseBounds.height;
+                const moatWidth = this.courseBounds.moatWidth;
+                
+                // Generate 5-7 houses across the background, avoiding water area
+                const numHouses = 5 + Math.floor(Math.random() * 3);
+                
+                for (let i = 0; i < numHouses; i++) {
+                    const houseTypes = ['haunted', 'cottage', 'tower', 'cabin'];
+                    const houseType = houseTypes[Math.floor(Math.random() * houseTypes.length)];
+                    
+                    let houseX, houseY;
+                    let attempts = 0;
+                    
+                    // Try to place house outside the water/course area
+                    do {
+                        houseX = (i + 0.5) * (this.canvas.width / numHouses) + (Math.random() - 0.5) * 100;
+                        houseY = grassTop + 50 + Math.random() * (grassBottom - grassTop - 150);
+                        attempts++;
+                    } while (attempts < 10 && this.isInWaterArea(houseX, houseY, courseX, courseY, courseWidth, courseHeight, moatWidth));
+                    
+                    houses.push({
+                        x: houseX,
+                        y: houseY,
+                        type: houseType,
+                        width: 40 + Math.random() * 30,
+                        height: 50 + Math.random() * 40,
+                        windowGlow: Math.random() * Math.PI * 2, // For animated window lights
+                        chimneySmoke: Math.random() * Math.PI * 2 // For smoke animation
+                    });
+                }
+                
+                return houses;
+            }
+
+            isInWaterArea(houseX, houseY, courseX, courseY, courseWidth, courseHeight, moatWidth) {
+                // Check if house would be in the water moat area or golf course lane
+                const buffer = 40; // Extra buffer around course
+                const areaLeft = courseX - moatWidth - buffer;
+                const areaRight = courseX + courseWidth + moatWidth + buffer;
+                const areaTop = courseY - moatWidth - buffer;
+                const areaBottom = courseY + courseHeight + buffer;
+                
+                return (houseX > areaLeft && houseX < areaRight && 
+                        houseY > areaTop && houseY < areaBottom);
+            }
+
+            drawBackground() {
+                // Night sky with stars (25% of screen)
+                const skyHeight = this.canvas.height * 0.25;
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, skyHeight);
+                gradient.addColorStop(0, '#1a0f2e');
+                gradient.addColorStop(0.7, '#2d1b69');
+                gradient.addColorStop(1, '#4a148c');
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, skyHeight);
+                
+                // Green ground (75% of screen)
+                const groundGradient = this.ctx.createLinearGradient(0, skyHeight, 0, this.canvas.height);
+                groundGradient.addColorStop(0, '#2d5016');
+                groundGradient.addColorStop(0.5, '#1a3d0f');
+                groundGradient.addColorStop(1, '#0d2608');
+                
+                this.ctx.fillStyle = groundGradient;
+                this.ctx.fillRect(0, skyHeight, this.canvas.width, this.canvas.height - skyHeight);
+                
+                // Stars (only in sky area)
+                for (let i = 0; i < 100; i++) {
+                    const x = (i * 123.456) % this.canvas.width;
+                    const y = (i * 78.9) % skyHeight;
+                    const twinkle = Math.sin(this.animationFrame * 0.1 + i) * 0.5 + 0.5;
+                    
+                    this.ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + twinkle * 0.7})`;
+                    this.ctx.fillRect(x, y, 1, 1);
+                }
+                
+                // Clouds
+                this.drawClouds();
+                
+                // Moon (dynamically positioned)
+                this.ctx.fillStyle = '#f0e68c';
+                this.ctx.shadowColor = '#f0e68c';
+                this.ctx.shadowBlur = 30;
+                this.ctx.beginPath();
+                this.ctx.arc(this.canvas.width - this.canvas.width * 0.1, this.canvas.height * 0.08, this.canvas.width * 0.03, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.shadowBlur = 0;
+            }
+
+            drawHouses() {
+                this.houses.forEach(house => {
+                    const glowPhase = Math.sin(this.animationFrame * 0.03 + house.windowGlow) * 0.5 + 0.5;
+                    const smokePhase = this.animationFrame * 0.02 + house.chimneySmoke;
+                    
+                    // House shadow
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    this.ctx.fillRect(house.x + 3, house.y + house.height + 3, house.width, 8);
+                    
+                    // Draw different house types
+                    switch (house.type) {
+                        case 'haunted':
+                            this.drawHauntedHouse(house, glowPhase, smokePhase);
+                            break;
+                        case 'cottage':
+                            this.drawCottage(house, glowPhase, smokePhase);
+                            break;
+                        case 'tower':
+                            this.drawTower(house, glowPhase, smokePhase);
+                            break;
+                        case 'cabin':
+                            this.drawCabin(house, glowPhase, smokePhase);
+                            break;
+                    }
+                });
+            }
+
+            drawHauntedHouse(house, glowPhase, smokePhase) {
+                // Main house structure (dark and spooky)
+                this.ctx.fillStyle = '#2a2a2a';
+                this.ctx.strokeStyle = '#1a1a1a';
+                this.ctx.lineWidth = 2;
+                this.ctx.fillRect(house.x, house.y, house.width, house.height);
+                this.ctx.strokeRect(house.x, house.y, house.width, house.height);
+                
+                // Crooked roof
+                this.ctx.fillStyle = '#1a1a1a';
+                this.ctx.beginPath();
+                this.ctx.moveTo(house.x - 5, house.y);
+                this.ctx.lineTo(house.x + house.width/2 + 5, house.y - 25);
+                this.ctx.lineTo(house.x + house.width + 5, house.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Spooky windows with eerie glow
+                this.ctx.fillStyle = `rgba(255, 100, 100, ${0.6 + glowPhase * 0.4})`;
+                this.ctx.shadowColor = '#ff6666';
+                this.ctx.shadowBlur = 15;
+                this.ctx.fillRect(house.x + 8, house.y + 15, 8, 12);
+                this.ctx.fillRect(house.x + house.width - 16, house.y + 15, 8, 12);
+                this.ctx.shadowBlur = 0;
+                
+                // Window frames
+                this.ctx.strokeStyle = '#444444';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(house.x + 8, house.y + 15, 8, 12);
+                this.ctx.strokeRect(house.x + house.width - 16, house.y + 15, 8, 12);
+                
+                // Chimney with smoke
+                this.ctx.fillStyle = '#333333';
+                this.ctx.fillRect(house.x + house.width - 8, house.y - 20, 6, 15);
+                
+                // Animated smoke
+                for (let i = 0; i < 4; i++) {
+                    const smokeY = house.y - 25 - i * 8;
+                    const smokeX = house.x + house.width - 5 + Math.sin(smokePhase + i) * 3;
+                    this.ctx.fillStyle = `rgba(150, 150, 150, ${0.4 - i * 0.1})`;
+                    this.ctx.beginPath();
+                    this.ctx.arc(smokeX, smokeY, 3 - i * 0.5, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+
+            drawCottage(house, glowPhase, smokePhase) {
+                // Cozy cottage structure
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 2;
+                this.ctx.fillRect(house.x, house.y, house.width, house.height);
+                this.ctx.strokeRect(house.x, house.y, house.width, house.height);
+                
+                // Rounded roof
+                this.ctx.fillStyle = '#654321';
+                this.ctx.beginPath();
+                this.ctx.moveTo(house.x - 3, house.y);
+                this.ctx.quadraticCurveTo(house.x + house.width/2, house.y - 20, house.x + house.width + 3, house.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Warm glowing windows
+                this.ctx.fillStyle = `rgba(255, 200, 100, ${0.7 + glowPhase * 0.3})`;
+                this.ctx.shadowColor = '#ffcc66';
+                this.ctx.shadowBlur = 12;
+                this.ctx.fillRect(house.x + 6, house.y + 12, 10, 10);
+                this.ctx.fillRect(house.x + house.width - 16, house.y + 12, 10, 10);
+                this.ctx.shadowBlur = 0;
+                
+                // Door
+                this.ctx.fillStyle = '#5d4037';
+                this.ctx.fillRect(house.x + house.width/2 - 6, house.y + house.height - 20, 12, 20);
+            }
+
+            drawTower(house, glowPhase, smokePhase) {
+                // Tall tower structure
+                const towerWidth = house.width * 0.7;
+                this.ctx.fillStyle = '#4a4a4a';
+                this.ctx.strokeStyle = '#333333';
+                this.ctx.lineWidth = 2;
+                this.ctx.fillRect(house.x, house.y, towerWidth, house.height + 20);
+                this.ctx.strokeRect(house.x, house.y, towerWidth, house.height + 20);
+                
+                // Pointed roof
+                this.ctx.fillStyle = '#2a2a2a';
+                this.ctx.beginPath();
+                this.ctx.moveTo(house.x - 2, house.y);
+                this.ctx.lineTo(house.x + towerWidth/2, house.y - 30);
+                this.ctx.lineTo(house.x + towerWidth + 2, house.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Multiple windows going up the tower
+                for (let i = 0; i < 3; i++) {
+                    const windowY = house.y + 15 + i * 20;
+                    this.ctx.fillStyle = `rgba(200, 150, 255, ${0.5 + glowPhase * 0.3})`;
+                    this.ctx.shadowColor = '#cc99ff';
+                    this.ctx.shadowBlur = 8;
+                    this.ctx.fillRect(house.x + towerWidth/2 - 4, windowY, 8, 8);
+                    this.ctx.shadowBlur = 0;
+                }
+            }
+
+            drawCabin(house, glowPhase, smokePhase) {
+                // Log cabin structure
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.strokeStyle = '#654321';
+                this.ctx.lineWidth = 2;
+                
+                // Draw log pattern
+                for (let i = 0; i < Math.floor(house.height / 8); i++) {
+                    const logY = house.y + i * 8;
+                    this.ctx.fillRect(house.x, logY, house.width, 8);
+                    this.ctx.strokeRect(house.x, logY, house.width, 8);
+                }
+                
+                // Simple triangular roof
+                this.ctx.fillStyle = '#5D4037';
+                this.ctx.beginPath();
+                this.ctx.moveTo(house.x - 4, house.y);
+                this.ctx.lineTo(house.x + house.width/2, house.y - 18);
+                this.ctx.lineTo(house.x + house.width + 4, house.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Single warm window
+                this.ctx.fillStyle = `rgba(255, 180, 80, ${0.8 + glowPhase * 0.2})`;
+                this.ctx.shadowColor = '#ffb450';
+                this.ctx.shadowBlur = 10;
+                this.ctx.fillRect(house.x + house.width/2 - 6, house.y + house.height/2 - 6, 12, 12);
+                this.ctx.shadowBlur = 0;
+            }
+
+            drawClouds() {
+                // Sort clouds by layer for proper rendering
+                const sortedClouds = [...this.clouds].sort((a, b) => a.layer - b.layer);
+                
+                sortedClouds.forEach(cloud => {
+                    // Animate cloud drift (much slower)
+                    cloud.x += cloud.driftSpeed;
+                    
+                    // Wrap around screen
+                    if (cloud.x > this.canvas.width + cloud.width) {
+                        cloud.x = -cloud.width;
+                    }
+                    
+                    // Draw oval-shaped cloud
+                    this.ctx.fillStyle = `rgba(220, 220, 240, ${cloud.opacity})`;
+                    
+                    // Main oval cloud body
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(cloud.x, cloud.y, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Add overlapping oval segments for realistic cloud appearance
+                    const numSegments = 3 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < numSegments; i++) {
+                        const segmentX = cloud.x + (Math.random() - 0.5) * cloud.width * 0.6;
+                        const segmentY = cloud.y + (Math.random() - 0.5) * cloud.height * 0.4;
+                        const segmentWidth = cloud.width * (0.3 + Math.random() * 0.4);
+                        const segmentHeight = cloud.height * (0.4 + Math.random() * 0.3);
+                        
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(segmentX, segmentY, segmentWidth / 2, segmentHeight / 2, 0, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                    
+                    // Cloud highlights for depth (oval highlight)
+                    this.ctx.fillStyle = `rgba(255, 255, 255, ${cloud.opacity * 0.4})`;
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(
+                        cloud.x - cloud.width * 0.15, 
+                        cloud.y - cloud.height * 0.2, 
+                        cloud.width * 0.3, 
+                        cloud.height * 0.25, 
+                        0, 0, Math.PI * 2
+                    );
+                    this.ctx.fill();
+                });
+            }
+
+            drawGolfCourse() {
+                // Fairway path (perspective view) - dynamically sized
+                const pathWidth = Math.min(120, this.canvas.width * 0.15); // Responsive width
+                const pathTop = this.canvas.height * 0.28; // Start of green area (adjusted for 25% sky)
+                const pathBottom = this.canvas.height - 30;
+                
+                this.ctx.fillStyle = '#1a3d0f';
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.canvas.width / 2 - pathWidth / 2, pathBottom);
+                this.ctx.lineTo(this.canvas.width / 2 + pathWidth / 2, pathBottom);
+                this.ctx.lineTo(this.canvas.width / 2 + 40, pathTop);
+                this.ctx.lineTo(this.canvas.width / 2 - 40, pathTop);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Water hazard boundaries
+                this.drawWaterHazard();
+                
+                // Distance markers with spooky posts (dynamically sized)
+                for (let i = 5; i <= 30; i += 5) {
+                    const progress = (30 - i) / 30;
+                    const y = pathBottom - progress * (pathBottom - pathTop);
+                    const markerWidth = Math.min(40, this.canvas.width * 0.05) - progress * (Math.min(20, this.canvas.width * 0.025));
+                    
+                    // Spooky fence posts
+                    this.ctx.fillStyle = '#4a4a4a';
+                    this.ctx.fillRect(this.canvas.width / 2 - markerWidth / 2 - 5, y - 20, 3, 25);
+                    this.ctx.fillRect(this.canvas.width / 2 + markerWidth / 2 + 2, y - 20, 3, 25);
+                    
+                    // Distance text with eerie glow
+                    this.ctx.fillStyle = '#ff6b35';
+                    this.ctx.shadowColor = '#ff6b35';
+                    this.ctx.shadowBlur = 10;
+                    this.ctx.font = `${12 - progress * 4}px Creepster`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(`${i}m`, this.canvas.width / 2, y - 25);
+                    this.ctx.shadowBlur = 0;
+                }
+            }
+
+            drawHalloweenDecorations() {
+                // Realistic Pumpkins
+                this.pumpkins.forEach(pumpkin => {
+                    const glow = Math.sin(this.animationFrame * 0.05 + pumpkin.glowPhase) * 0.3 + 0.7;
+                    
+                    // Pumpkin body with segments
+                    this.ctx.fillStyle = '#ff7f00';
+                    this.ctx.strokeStyle = '#cc5500';
+                    this.ctx.lineWidth = 2;
+                    
+                    // Main pumpkin body
+                    this.ctx.beginPath();
+                    this.ctx.arc(pumpkin.x, pumpkin.y, pumpkin.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Pumpkin segments (vertical ridges)
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (i * Math.PI * 2) / 6;
+                        const startX = pumpkin.x + Math.cos(angle) * (pumpkin.size * 0.7);
+                        const startY = pumpkin.y + Math.sin(angle) * (pumpkin.size * 0.7);
+                        const endX = pumpkin.x + Math.cos(angle) * pumpkin.size;
+                        const endY = pumpkin.y + Math.sin(angle) * pumpkin.size;
+                        
+                        this.ctx.strokeStyle = '#cc5500';
+                        this.ctx.lineWidth = 1;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(startX, startY);
+                        this.ctx.lineTo(endX, endY);
+                        this.ctx.stroke();
+                    }
+                    
+                    // Pumpkin stem
+                    this.ctx.fillStyle = '#4a4a4a';
+                    this.ctx.fillRect(pumpkin.x - 3, pumpkin.y - pumpkin.size - 8, 6, 12);
+                    
+                    // Stem highlight
+                    this.ctx.fillStyle = '#6a6a6a';
+                    this.ctx.fillRect(pumpkin.x - 3, pumpkin.y - pumpkin.size - 8, 2, 12);
+                    
+                    // Pumpkin glow
+                    this.ctx.fillStyle = `rgba(255, 127, 0, ${glow * 0.3})`;
+                    this.ctx.shadowColor = '#ff7f00';
+                    this.ctx.shadowBlur = 25;
+                    this.ctx.beginPath();
+                    this.ctx.arc(pumpkin.x, pumpkin.y, pumpkin.size + 8, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                    
+                    // More detailed Jack-o'-lantern face
+                    this.ctx.fillStyle = `rgba(255, 255, 0, ${glow})`;
+                    this.ctx.shadowColor = '#ffff00';
+                    this.ctx.shadowBlur = 20;
+                    
+                    // Triangular eyes
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(pumpkin.x - 8, pumpkin.y - 8);
+                    this.ctx.lineTo(pumpkin.x - 4, pumpkin.y - 2);
+                    this.ctx.lineTo(pumpkin.x - 12, pumpkin.y - 2);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(pumpkin.x + 8, pumpkin.y - 8);
+                    this.ctx.lineTo(pumpkin.x + 4, pumpkin.y - 2);
+                    this.ctx.lineTo(pumpkin.x + 12, pumpkin.y - 2);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    
+                    // Zigzag mouth
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(pumpkin.x - 10, pumpkin.y + 3);
+                    this.ctx.lineTo(pumpkin.x - 6, pumpkin.y + 8);
+                    this.ctx.lineTo(pumpkin.x - 2, pumpkin.y + 3);
+                    this.ctx.lineTo(pumpkin.x + 2, pumpkin.y + 8);
+                    this.ctx.lineTo(pumpkin.x + 6, pumpkin.y + 3);
+                    this.ctx.lineTo(pumpkin.x + 10, pumpkin.y + 8);
+                    this.ctx.lineTo(pumpkin.x + 10, pumpkin.y + 12);
+                    this.ctx.lineTo(pumpkin.x - 10, pumpkin.y + 12);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                });
+                
+                // Realistic floating ghosts
+                this.ghosts.forEach(ghost => {
+                    const floatY = ghost.y + Math.sin(this.animationFrame * ghost.speed + ghost.floatOffset) * 12;
+                    const sway = Math.sin(this.animationFrame * 0.03 + ghost.floatOffset) * 8;
+                    
+                    // Ghost glow/aura
+                    this.ctx.fillStyle = 'rgba(200, 220, 255, 0.2)';
+                    this.ctx.shadowColor = '#b0c4de';
+                    this.ctx.shadowBlur = 25;
+                    this.ctx.beginPath();
+                    this.ctx.arc(ghost.x + sway, floatY, 25, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                    
+                    // Main ghost body (semi-transparent white with blue tint)
+                    this.ctx.fillStyle = 'rgba(240, 248, 255, 0.8)';
+                    this.ctx.strokeStyle = 'rgba(200, 220, 255, 0.6)';
+                    this.ctx.lineWidth = 2;
+                    
+                    // Ghost head (oval shape)
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(ghost.x + sway, floatY - 5, 18, 22, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Ghost body (flowing shape)
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(ghost.x + sway, floatY + 8, 16, 18, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Animated flowing tail with multiple segments
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(ghost.x + sway - 16, floatY + 18);
+                    
+                    for (let i = 0; i < 6; i++) {
+                        const segmentY = floatY + 25 + i * 4;
+                        const waveX = ghost.x + sway + Math.sin(this.animationFrame * 0.08 + i * 0.5) * (6 - i);
+                        const waveWidth = 16 - i * 2;
+                        
+                        if (i % 2 === 0) {
+                            this.ctx.lineTo(waveX - waveWidth/2, segmentY);
+                        } else {
+                            this.ctx.lineTo(waveX + waveWidth/2, segmentY);
+                        }
+                    }
+                    
+                    this.ctx.lineTo(ghost.x + sway + 16, floatY + 18);
+                    this.ctx.closePath();
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Spooky glowing eyes
+                    this.ctx.fillStyle = '#ff4444';
+                    this.ctx.shadowColor = '#ff0000';
+                    this.ctx.shadowBlur = 8;
+                    
+                    // Large oval eyes
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(ghost.x + sway - 8, floatY - 8, 4, 6, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(ghost.x + sway + 8, floatY - 8, 4, 6, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                    
+                    // Eye pupils
+                    this.ctx.fillStyle = '#660000';
+                    this.ctx.fillRect(ghost.x + sway - 9, floatY - 8, 2, 3);
+                    this.ctx.fillRect(ghost.x + sway + 7, floatY - 8, 2, 3);
+                    
+                    // Spooky mouth (sometimes visible)
+                    if (Math.sin(this.animationFrame * 0.02 + ghost.floatOffset) > 0.3) {
+                        this.ctx.fillStyle = 'rgba(100, 100, 100, 0.8)';
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(ghost.x + sway, floatY + 2, 6, 4, 0, 0, Math.PI);
+                        this.ctx.fill();
+                    }
+                });
+                
+                // Flying bats (constrained to sky region)
+                const skyHeight = this.canvas.height * 0.25;
+                this.bats.forEach(bat => {
+                    bat.x += Math.cos(bat.direction) * bat.speed;
+                    bat.y += Math.sin(bat.direction) * bat.speed;
+                    
+                    // Wrap around screen but stay in sky
+                    if (bat.x < 0) bat.x = this.canvas.width;
+                    if (bat.x > this.canvas.width) bat.x = 0;
+                    if (bat.y < 0) bat.y = skyHeight - 20;
+                    if (bat.y > skyHeight) bat.y = 20;
+                    
+                    const wingFlap = Math.sin(this.animationFrame * 0.3 + bat.wingPhase);
+                    
+                    this.ctx.fillStyle = '#1a1a1a';
+                    this.ctx.strokeStyle = '#333333';
+                    this.ctx.lineWidth = 1;
+                    
+                    // Larger bat body
+                    this.ctx.beginPath();
+                    this.ctx.arc(bat.x, bat.y, 4, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Larger, more detailed wings
+                    this.ctx.fillStyle = '#2a2a2a';
+                    this.ctx.beginPath();
+                    
+                    // Left wing
+                    this.ctx.moveTo(bat.x - 4, bat.y);
+                    this.ctx.quadraticCurveTo(bat.x - 15, bat.y - 8 + wingFlap * 4, bat.x - 20, bat.y - 2 + wingFlap * 3);
+                    this.ctx.quadraticCurveTo(bat.x - 18, bat.y + 2, bat.x - 12, bat.y + 4);
+                    this.ctx.quadraticCurveTo(bat.x - 8, bat.y + 2, bat.x - 4, bat.y);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Right wing
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(bat.x + 4, bat.y);
+                    this.ctx.quadraticCurveTo(bat.x + 15, bat.y - 8 + wingFlap * 4, bat.x + 20, bat.y - 2 + wingFlap * 3);
+                    this.ctx.quadraticCurveTo(bat.x + 18, bat.y + 2, bat.x + 12, bat.y + 4);
+                    this.ctx.quadraticCurveTo(bat.x + 8, bat.y + 2, bat.x + 4, bat.y);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+                    
+                    // Bat eyes (tiny red dots)
+                    this.ctx.fillStyle = '#ff0000';
+                    this.ctx.fillRect(bat.x - 2, bat.y - 1, 1, 1);
+                    this.ctx.fillRect(bat.x + 1, bat.y - 1, 1, 1);
+                });
+            }
+
+            drawHole() {
+                // Small green patch around the hole
+                this.ctx.fillStyle = '#228B22';
+                this.ctx.beginPath();
+                this.ctx.arc(this.holeX, this.holeY, 25, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Green patch border
+                this.ctx.strokeStyle = '#32CD32';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(this.holeX, this.holeY, 25, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                // Hole with spooky glow
+                this.ctx.fillStyle = '#000000';
+                this.ctx.shadowColor = '#8a2be2';
+                this.ctx.shadowBlur = 25;
+                this.ctx.beginPath();
+                this.ctx.arc(this.holeX, this.holeY, 12, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.shadowBlur = 0;
+                
+                // Flag pole
+                this.ctx.strokeStyle = '#4a4a4a';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.holeX + 15, this.holeY);
+                this.ctx.lineTo(this.holeX + 15, this.holeY - 40);
+                this.ctx.stroke();
+                
+                // Halloween flag
+                const flagWave = Math.sin(this.animationFrame * 0.1) * 3;
+                this.ctx.fillStyle = '#ff4500';
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.holeX + 15, this.holeY - 40);
+                this.ctx.quadraticCurveTo(this.holeX + 35 + flagWave, this.holeY - 35, this.holeX + 30, this.holeY - 25);
+                this.ctx.lineTo(this.holeX + 15, this.holeY - 25);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                // Hole number
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.font = '12px Creepster';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('1', this.holeX + 22, this.holeY - 30);
+            }
+
+            drawWaterHazard() {
+                // Calculate golf course boundary
+                const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
+                const courseY = this.courseBounds.centerY - this.courseBounds.height / 2;
+                const courseWidth = this.courseBounds.width;
+                const courseHeight = this.courseBounds.height;
+                const moatWidth = this.courseBounds.moatWidth;
+                
+                // Direct positioning: top moat aligns with grass start
+                const grassStartY = this.canvas.height * 0.25;
+                
+                // Draw U-shaped water moat (no bottom)
+                this.ctx.fillStyle = '#1e3a8a';
+                
+                // Top moat - positioned directly at grass start
+                this.ctx.fillRect(courseX - moatWidth, grassStartY, courseWidth + 2 * moatWidth, moatWidth);
+                
+                // Left moat - starts from grass line
+                this.ctx.fillRect(courseX - moatWidth, grassStartY + moatWidth, moatWidth, this.startY - grassStartY - moatWidth);
+                
+                // Right moat - starts from grass line
+                this.ctx.fillRect(courseX + courseWidth, grassStartY + moatWidth, moatWidth, this.startY - grassStartY - moatWidth);
+                
+                // Water surface animation on moat borders
+                this.ctx.strokeStyle = '#3b82f6';
+                this.ctx.lineWidth = 1;
+                
+                // Animated waves on top border
+                this.ctx.beginPath();
+                for (let x = courseX - moatWidth; x < courseX + courseWidth + moatWidth; x += 15) {
+                    const waveHeight = Math.sin((x - courseX) * 0.03 + this.animationFrame * 0.08) * 2;
+                    this.ctx.lineTo(x, grassStartY + moatWidth/2 + waveHeight);
+                }
+                this.ctx.stroke();
+                
+                // Animated waves on left border
+                this.ctx.beginPath();
+                for (let y = grassStartY + moatWidth; y < this.startY; y += 15) {
+                    const waveHeight = Math.sin((y - grassStartY) * 0.03 + this.animationFrame * 0.08) * 2;
+                    this.ctx.lineTo(courseX - moatWidth/2 + waveHeight, y);
+                }
+                this.ctx.stroke();
+                
+                // Animated waves on right border
+                this.ctx.beginPath();
+                for (let y = grassStartY + moatWidth; y < this.startY; y += 15) {
+                    const waveHeight = Math.sin((y - grassStartY) * 0.03 + this.animationFrame * 0.08) * 2;
+                    this.ctx.lineTo(courseX + courseWidth + moatWidth/2 + waveHeight, y);
+                }
+                this.ctx.stroke();
+                
+                // Golf course boundary markers (U-shaped, no bottom)
+                this.ctx.strokeStyle = '#ff6b35';
+                this.ctx.lineWidth = 2;
+                this.ctx.setLineDash([5, 5]);
+                
+                // Top boundary at grass line
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX + courseWidth, grassStartY + moatWidth);
+                this.ctx.stroke();
+                
+                // Left boundary
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX, this.startY);
+                this.ctx.stroke();
+                
+                // Right boundary
+                this.ctx.beginPath();
+                this.ctx.moveTo(courseX + courseWidth, grassStartY + moatWidth);
+                this.ctx.lineTo(courseX + courseWidth, this.startY);
+                this.ctx.stroke();
+                
+                this.ctx.setLineDash([]);
+                
+                // Add warning signs at top corners only
+                this.ctx.fillStyle = '#ff6b35';
+                this.ctx.font = '12px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('⚠️', courseX, grassStartY - 5);
+                this.ctx.fillText('⚠️', courseX + courseWidth, grassStartY - 5);
+            }
+
+            drawGolfer() {
+                // Golfer follows the ball, but offset to the side
+                const golferX = this.golferX - 30;
+                const golferY = this.golferY + 20;
+                
+                // Golfer silhouette (white for visibility)
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.strokeStyle = '#cccccc';
+                this.ctx.lineWidth = 2;
+                
+                // Head
+                this.ctx.beginPath();
+                this.ctx.arc(golferX, golferY - 60, 8, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.stroke();
+                
+                // Body
+                this.ctx.fillRect(golferX - 6, golferY - 50, 12, 30);
+                this.ctx.strokeRect(golferX - 6, golferY - 50, 12, 30);
+                
+                // Legs
+                this.ctx.fillRect(golferX - 8, golferY - 20, 6, 25);
+                this.ctx.strokeRect(golferX - 8, golferY - 20, 6, 25);
+                this.ctx.fillRect(golferX + 2, golferY - 20, 6, 25);
+                this.ctx.strokeRect(golferX + 2, golferY - 20, 6, 25);
+                
+                // Arms and club
+                const armAngle = this.golferArmAngle;
+                const armX = golferX + Math.cos(armAngle) * 15;
+                const armY = golferY - 35 + Math.sin(armAngle) * 15;
+                
+                this.ctx.strokeStyle = '#ffffff';
+                this.ctx.lineWidth = 4;
+                this.ctx.beginPath();
+                this.ctx.moveTo(golferX + 6, golferY - 35);
+                this.ctx.lineTo(armX, armY);
+                this.ctx.stroke();
+                
+                // Golf club
+                const clubX = armX + Math.cos(armAngle) * 25;
+                const clubY = armY + Math.sin(armAngle) * 25;
+                
+                this.ctx.strokeStyle = '#8b4513';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.moveTo(armX, armY);
+                this.ctx.lineTo(clubX, clubY);
+                this.ctx.stroke();
+                
+                // Club head
+                this.ctx.fillStyle = '#c0c0c0';
+                this.ctx.fillRect(clubX - 3, clubY - 2, 6, 4);
+            }
+
+            drawBall() {
+                if (this.trail.length > 0) {
+                    // Draw enhanced trail with glow effect
+                    for (let i = 1; i < this.trail.length; i++) {
+                        const alpha = i / this.trail.length;
+                        const glowAlpha = alpha * 0.8;
+                        
+                        // Glow effect
+                        this.ctx.strokeStyle = `rgba(255, 255, 100, ${glowAlpha * 0.3})`;
+                        this.ctx.lineWidth = alpha * 8;
+                        this.ctx.lineCap = 'round';
+                        this.ctx.shadowColor = '#ffff64';
+                        this.ctx.shadowBlur = 15;
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(this.trail[i-1].x, this.trail[i-1].y);
+                        this.ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                        this.ctx.stroke();
+                        
+                        // Main trail
+                        this.ctx.shadowBlur = 0;
+                        this.ctx.strokeStyle = `rgba(255, 255, 255, ${glowAlpha})`;
+                        this.ctx.lineWidth = alpha * 4;
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(this.trail[i-1].x, this.trail[i-1].y);
+                        this.ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                        this.ctx.stroke();
+                    }
+                }
+                
+                // Ball shadow
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                this.ctx.beginPath();
+                this.ctx.ellipse(this.ballX + 2, this.canvas.height - 85, 6, 3, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Golf ball
+                const ballGradient = this.ctx.createRadialGradient(
+                    this.ballX - 2, this.ballY - 2, 0,
+                    this.ballX, this.ballY, 8
+                );
+                ballGradient.addColorStop(0, '#ffffff');
+                ballGradient.addColorStop(0.7, '#f0f0f0');
+                ballGradient.addColorStop(1, '#d0d0d0');
+                
+                this.ctx.fillStyle = ballGradient;
+                this.ctx.beginPath();
+                this.ctx.arc(this.ballX, this.ballY, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Ball dimples
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i * Math.PI * 2 / 6) + this.animationFrame * 0.1;
+                    const dimpleX = this.ballX + Math.cos(angle) * 3;
+                    const dimpleY = this.ballY + Math.sin(angle) * 3;
+                    this.ctx.beginPath();
+                    this.ctx.arc(dimpleX, dimpleY, 0.8, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+
+            updateDistance() {
+                // Calculate Euclidean distance in meters
+                const dx = this.holeX - this.ballX;
+                const dy = this.holeY - this.ballY;
+                const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+                this.distanceToHole = pixelDistance / this.metersToPixels;
+                document.getElementById('distanceValue').textContent = this.distanceToHole.toFixed(1) + 'm';
+            }
+
+            checkOutOfBounds() {
+                // Check if ball is outside the U-shaped course boundary (no bottom boundary)
+                const courseX = this.courseBounds.centerX - this.courseBounds.width / 2;
+                const courseWidth = this.courseBounds.width;
+                const grassStartY = this.canvas.height * 0.25;
+                const moatWidth = this.courseBounds.moatWidth;
+                
+                return (this.ballX < courseX || 
+                        this.ballX > courseX + courseWidth ||
+                        this.ballY < grassStartY + moatWidth); // Only top, left, and right boundaries
+            }
+
+            animateShot(type) {
+                if (this.isAnimating) return;
+                
+                // Store previous position for out-of-bounds recovery
+                this.previousBallX = this.ballX;
+                this.previousBallY = this.ballY;
+                
+                this.isAnimating = true;
+                this.trail = [];
+                
+                // Fixed distance shots in meters
+                const shots = {
+                    SLOW: { 
+                        distanceMeters: 5, // 5 meters
+                        height: 0.15, 
+                        duration: 3500,
+                        lateralMeters: 0
+                    },
+                    MEDIUM: { 
+                        distanceMeters: 10, // 10 meters
+                        height: 0.3, 
+                        duration: 2800,
+                        lateralMeters: 0
+                    },
+                    FAST: { 
+                        distanceMeters: 20, // 20 meters
+                        height: 0.4, 
+                        duration: 2000,
+                        lateralMeters: 0
+                    },
+                    CURVE_LEFT: { 
+                        distanceMeters: 10, // 10 meters forward
+                        height: 0.3, 
+                        duration: 2800,
+                        lateralMeters: -5 // 5 meters to the left
+                    },
+                    CURVE_RIGHT: { 
+                        distanceMeters: 10, // 10 meters forward
+                        height: 0.3, 
+                        duration: 2800,
+                        lateralMeters: 5 // 5 meters to the right
+                    }
+                };
+                
+                const shot = shots[type];
+                const startTime = performance.now();
+                const startX = this.ballX;
+                const startY = this.ballY;
+                
+                // Calculate direction to hole
+                const dx = this.holeX - startX;
+                const dy = this.holeY - startY;
+                const distanceToHole = Math.sqrt(dx * dx + dy * dy);
+                const dirX = dx / distanceToHole;
+                const dirY = dy / distanceToHole;
+                
+                // Calculate target position using fixed meters
+                const movePixels = shot.distanceMeters * this.metersToPixels;
+                let targetX = startX + dirX * movePixels;
+                let targetY = startY + dirY * movePixels;
+                
+                // Add lateral movement for curve shots
+                if (shot.lateralMeters !== 0) {
+                    const lateralPixels = Math.abs(shot.lateralMeters) * this.metersToPixels;
+                    const perpX = -dirY; // Perpendicular direction
+                    const perpY = dirX;
+                    
+                    targetX += perpX * lateralPixels * Math.sign(shot.lateralMeters);
+                    targetY += perpY * lateralPixels * Math.sign(shot.lateralMeters);
+                }
+                
+                // Golfer swing animation
+                const swingDuration = 500;
+                const originalArmAngle = this.golferArmAngle;
+                
+                const animate = (currentTime) => {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / shot.duration, 1);
+                    
+                    // Golfer swing
+                    if (elapsed < swingDuration) {
+                        const swingProgress = elapsed / swingDuration;
+                        this.golferArmAngle = originalArmAngle + Math.sin(swingProgress * Math.PI) * 1.5;
+                    } else {
+                        this.golferArmAngle = originalArmAngle;
+                    }
+                    
+                    // Ball trajectory
+                    if (progress > 0.1) { // Delay ball movement slightly
+                        const ballProgress = (progress - 0.1) / 0.9;
+                        
+                        // Linear movement from start to target
+                        let x = startX + (targetX - startX) * ballProgress;
+                        let y = startY + (targetY - startY) * ballProgress;
+                        
+                        // Add vertical arc
+                        const heightFactor = 4 * ballProgress * (1 - ballProgress);
+                        y -= heightFactor * shot.height * 100;
+                        
+                        this.ballX = x;
+                        this.ballY = y;
+                        
+                        // Add to trail
+                        this.trail.push({ x, y });
+                        if (this.trail.length > this.maxTrailLength) {
+                            this.trail.shift();
+                        }
+                    }
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        // Shot complete
+                        this.isAnimating = false;
+                        this.trail = [];
+                        
+                        // Check if ball is within 5m of hole (auto-hole)
+                        const finalDistanceMeters = this.distanceToHole;
+                        
+                        if (finalDistanceMeters < 5.0) {
+                            // Ball automatically goes in hole
+                            this.ballX = this.holeX;
+                            this.ballY = this.holeY;
+                            
+                            setTimeout(() => {
+                                alert("🎃 BALL IN HOLE! 🎃");
+                                // Reset ball and golfer to starting position
+                                this.ballX = this.startX;
+                                this.ballY = this.startY;
+                                this.golferX = this.startX;
+                                this.golferY = this.startY;
+                            }, 500);
+                        } else if (this.checkOutOfBounds()) {
+                            // Ball went out of bounds
+                            setTimeout(() => {
+                                alert("💦 OUT OF BOUNDS! Par increased.");
+                                this.currentPar++;
+                                document.getElementById('parValue').textContent = this.currentPar;
+                                
+                                // Return ball to previous position
+                                this.ballX = this.previousBallX;
+                                this.ballY = this.previousBallY;
+                                this.golferX = this.previousBallX;
+                                this.golferY = this.previousBallY;
+                            }, 500);
+                        } else {
+                            // Normal shot completed - move golfer to ball position
+                            this.golferX = this.ballX;
+                            this.golferY = this.ballY;
+                        }
+                    }
+                };
+                
+                requestAnimationFrame(animate);
+            }
+
+            startAmbientAnimations() {
+                const animate = () => {
+                    this.animationFrame++;
+                    this.updateDistance();
+                    this.draw();
+                    requestAnimationFrame(animate);
+                };
+                animate();
+            }
+
+            draw() {
+                this.drawBackground();
+                this.drawHouses(); // Draw houses behind everything else
+                this.drawGolfCourse();
+                this.drawHalloweenDecorations();
+                this.drawHole();
+                this.drawGolfer();
+                this.drawBall();
+            }
+        }
+
+        // Initialize the game
+        let miniGolf;
+
+        // Global function for taking shots
+        function takeShot(type) {
+            if (miniGolf && !miniGolf.isAnimating) {
+                miniGolf.animateShot(type);
+            }
+        }
+
+        // WebSocket connection for ML model integration
+        class SwingWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isRecording = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 2000;
+                
+                this.connect();
+            }
+            
+            connect() {
+                try {
+                    // Connect to Raspberry Pi WebSocket server
+                    // Change this IP to your Raspberry Pi's IP address
+                    this.ws = new WebSocket('ws://10.78.111.133:8765');
+                    
+                    this.ws.onopen = (event) => {
+                        console.log('Connected to golf swing server');
+                        this.reconnectAttempts = 0;
+                        this.updateStatus('connectionStatus', '🔗 Connected to server', '#32cd32');
+                        
+                        // Request initial status
+                        this.send({type: 'get_status'});
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (e) {
+                            console.error('Error parsing WebSocket message:', e);
+                        }
+                    };
+                    
+                    this.ws.onclose = (event) => {
+                        console.log('WebSocket connection closed');
+                        this.updateStatus('connectionStatus', '🔗 Connection lost', '#ff4444');
+                        this.attemptReconnect();
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateStatus('connectionStatus', '🔗 Connection error', '#ff4444');
+                    };
+                    
+                } catch (error) {
+                    console.error('Failed to connect to WebSocket:', error);
+                    this.updateStatus('connectionStatus', '🔗 Failed to connect', '#ff4444');
+                    this.attemptReconnect();
+                }
+            }
+            
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    this.updateStatus('connectionStatus', `🔗 Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, '#ffaa00');
+                    
+                    setTimeout(() => {
+                        this.connect();
+                    }, this.reconnectDelay * this.reconnectAttempts);
+                } else {
+                    this.updateStatus('connectionStatus', '🔗 Connection failed', '#ff4444');
+                }
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                } else {
+                    console.error('WebSocket not connected');
+                }
+            }
+            
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'status':
+                        this.handleStatusUpdate(data);
+                        break;
+                        
+                    case 'recording_started':
+                        this.handleRecordingStarted(data);
+                        break;
+                        
+                    case 'recording_stopped':
+                        this.handleRecordingStopped(data);
+                        break;
+                        
+                    case 'swing_prediction':
+                        this.handleSwingPrediction(data);
+                        break;
+                        
+                    case 'error':
+                        this.handleError(data);
+                        break;
+                        
+                    case 'imu_data':
+                        // Optional: handle real-time IMU data
+                        break;
+                        
+                    default:
+                        console.log('Unknown message type:', data.type, data);
+                }
+            }
+            
+            handleStatusUpdate(data) {
+                if (data.classifier_ready) {
+                    this.updateStatus('modelStatus', '⚡ Physics classifier ready', '#32cd32');
+                } else {
+                    this.updateStatus('modelStatus', '⚡ Physics classifier not ready', '#ff4444');
+                }
+                
+                if (data.esp32_connected) {
+                    this.updateStatus('esp32Status', '📡 ESP32 connected', '#32cd32');
+                } else {
+                    this.updateStatus('esp32Status', '📡 ESP32 disconnected', '#ff4444');
+                }
+                
+                // Update swing button state
+                this.updateSwingButton(data.classifier_ready && data.esp32_connected);
+            }
+            
+            handleRecordingStarted(data) {
+                this.isRecording = true;
+                const button = document.getElementById('swingButton');
+                const status = document.getElementById('swingStatus');
+                
+                button.textContent = '🔴 Recording...';
+                button.classList.add('recording');
+                button.disabled = true;
+                
+                status.textContent = `Recording for ${data.duration} seconds...`;
+                
+                // Start countdown
+                let timeLeft = data.duration;
+                const countdown = setInterval(() => {
+                    timeLeft -= 0.1;
+                    if (timeLeft <= 0) {
+                        clearInterval(countdown);
+                        status.textContent = 'Processing swing...';
+                    } else {
+                        status.textContent = `Recording: ${timeLeft.toFixed(1)}s remaining`;
+                    }
+                }, 100);
+            }
+            
+            handleRecordingStopped(data) {
+                this.isRecording = false;
+                const status = document.getElementById('swingStatus');
+                status.textContent = `Collected ${data.samples_collected} samples. Analyzing...`;
+            }
+            
+            handleSwingPrediction(data) {
+                const button = document.getElementById('swingButton');
+                const status = document.getElementById('swingStatus');
+                
+                // Reset button
+                button.textContent = '🏌️ Swing!';
+                button.classList.remove('recording');
+                button.disabled = false;
+                
+                // Show prediction result
+                status.innerHTML = `
+                    Swing: <strong>${data.prediction}</strong><br>
+                    Confidence: ${data.confidence}%
+                `;
+                
+                // Trigger the corresponding animation in the game
+                if (miniGolf && !miniGolf.isAnimating) {
+                    console.log(`Physics classifier predicted: ${data.prediction}, triggering: ${data.trajectory_type}`);
+                    miniGolf.animateShot(data.trajectory_type);
+                    
+                    // Clear status after a delay
+                    setTimeout(() => {
+                        status.textContent = '';
+                    }, 3000);
+                }
+            }
+            
+            handleError(data) {
+                const status = document.getElementById('swingStatus');
+                status.textContent = `Error: ${data.message}`;
+                status.style.color = '#ff4444';
+                
+                // Reset button if recording
+                if (this.isRecording) {
+                    const button = document.getElementById('swingButton');
+                    button.textContent = '🏌️ Swing!';
+                    button.classList.remove('recording');
+                    button.disabled = false;
+                    this.isRecording = false;
+                }
+                
+                // Clear error after delay
+                setTimeout(() => {
+                    status.textContent = '';
+                    status.style.color = '#32cd32';
+                }, 5000);
+            }
+            
+            updateStatus(elementId, text, color = '#ff6b35') {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.textContent = text;
+                    element.style.color = color;
+                }
+            }
+            
+            updateSwingButton(enabled) {
+                const button = document.getElementById('swingButton');
+                if (button) {
+                    button.disabled = !enabled || this.isRecording;
+                }
+            }
+            
+            startRecording() {
+                if (!this.isRecording && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.send({type: 'start_recording'});
+                }
+            }
+        }
+
+        // Initialize WebSocket connection
+        let swingSocket;
+        
+        // Global function for starting swing recording
+        function startSwingRecording() {
+            if (swingSocket) {
+                swingSocket.startRecording();
+            } else {
+                alert('Not connected to server. Please check connection.');
+            }
+        }
+
+        // Initialize everything when page loads
+        window.addEventListener('load', () => {
+            miniGolf = new HalloweenMiniGolf('miniGolfCanvas');
+            swingSocket = new SwingWebSocket();
+        });
+    </script>
+</body>
+</html>
